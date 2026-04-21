@@ -4,6 +4,13 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.10.3] - 2026-04-21
+
+### Changed
+- **CI:** Switched from self-hosted runners to GitHub-hosted runners (ubuntu-latest, macos-latest, windows-latest)
+- **CI:** Added `environment: release` protection to all release workflow jobs
+- Removed ad-hoc test scripts
+
 ## [v0.10.2] - 2026-04-15
 
 ### Fixed
