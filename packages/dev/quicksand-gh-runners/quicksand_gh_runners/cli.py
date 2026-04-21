@@ -47,12 +47,19 @@ def _vm_power_state(client: ComputeManagementClient, vm_name: str) -> str:
 def _get_shutdown_time(vm_name: str) -> str | None:
     result = subprocess.run(
         [
-            "az", "resource", "show",
-            "--resource-group", config.RESOURCE_GROUP,
-            "--resource-type", "Microsoft.DevTestLab/schedules",
-            "--name", f"shutdown-computevm-{vm_name}",
-            "--query", "properties.dailyRecurrence.time",
-            "-o", "tsv",
+            "az",
+            "resource",
+            "show",
+            "--resource-group",
+            config.RESOURCE_GROUP,
+            "--resource-type",
+            "Microsoft.DevTestLab/schedules",
+            "--name",
+            f"shutdown-computevm-{vm_name}",
+            "--query",
+            "properties.dailyRecurrence.time",
+            "-o",
+            "tsv",
         ],
         capture_output=True,
         text=True,
@@ -145,10 +152,15 @@ def cmd_extend(args: argparse.Namespace) -> None:
     for alias, vm_name in runners.items():
         result = subprocess.run(
             [
-                "az", "vm", "auto-shutdown",
-                "--resource-group", config.RESOURCE_GROUP,
-                "--name", vm_name,
-                "--time", utc_time,
+                "az",
+                "vm",
+                "auto-shutdown",
+                "--resource-group",
+                config.RESOURCE_GROUP,
+                "--name",
+                vm_name,
+                "--time",
+                utc_time,
             ],
             capture_output=True,
             text=True,
@@ -256,10 +268,15 @@ def cmd_setup(args: argparse.Namespace) -> None:
     print(f"Creating resource group {config.RESOURCE_GROUP}...")
     subprocess.run(
         [
-            "az", "group", "create",
-            "--name", config.RESOURCE_GROUP,
-            "--location", config.LOCATION,
-            "--output", "none",
+            "az",
+            "group",
+            "create",
+            "--name",
+            config.RESOURCE_GROUP,
+            "--location",
+            config.LOCATION,
+            "--output",
+            "none",
         ],
         check=True,
     )
@@ -279,14 +296,20 @@ def cmd_setup(args: argparse.Namespace) -> None:
     print("Deploying Bicep template...")
     subprocess.run(
         [
-            "az", "deployment", "group", "create",
-            "--resource-group", config.RESOURCE_GROUP,
-            "--template-file", str(bicep_path),
+            "az",
+            "deployment",
+            "group",
+            "create",
+            "--resource-group",
+            config.RESOURCE_GROUP,
+            "--template-file",
+            str(bicep_path),
             "--parameters",
             f"sshPublicKey={ssh_key}",
             f"windowsAdminPassword={win_password}",
             f"kvAdminObjectId={user_object_id}",
-            "--output", "none",
+            "--output",
+            "none",
         ],
         check=True,
     )
@@ -308,18 +331,23 @@ def main() -> int:
     for name, fn in [("start", cmd_start), ("stop", cmd_stop), ("status", cmd_status)]:
         p = sub.add_parser(name)
         p.add_argument(
-            "runner", nargs="?", choices=list(config.RUNNERS),
+            "runner",
+            nargs="?",
+            choices=list(config.RUNNERS),
             help="Runner to target (default: all)",
         )
         p.set_defaults(func=fn)
 
     p_extend = sub.add_parser("extend", help="Extend auto-shutdown time")
     p_extend.add_argument(
-        "time", nargs="?",
+        "time",
+        nargs="?",
         help="New shutdown time, e.g. '10pm', '11pm' (default: 10pm EST)",
     )
     p_extend.add_argument(
-        "runner", nargs="?", choices=list(config.RUNNERS),
+        "runner",
+        nargs="?",
+        choices=list(config.RUNNERS),
         help="Runner to target (default: all)",
     )
     p_extend.set_defaults(func=cmd_extend)
