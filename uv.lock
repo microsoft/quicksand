@@ -734,230 +734,6 @@ wheels = [
 ]
 
 [[package]]
-name = "quicksand"
-version = "0.10.3.dev0"
-source = { editable = "packages/quicksand" }
-dependencies = [
-    { name = "quicksand-core" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "quicksand-alpine" },
-    { name = "quicksand-alpine-desktop" },
-    { name = "quicksand-image-tools" },
-    { name = "quicksand-qemu" },
-    { name = "quicksand-ubuntu" },
-    { name = "quicksand-ubuntu-desktop" },
-]
-alpine = [
-    { name = "quicksand-alpine" },
-]
-alpine-desktop = [
-    { name = "quicksand-alpine-desktop" },
-]
-dev = [
-    { name = "quicksand-base-scaffold" },
-    { name = "quicksand-image-tools" },
-    { name = "quicksand-overlay-scaffold" },
-]
-qemu = [
-    { name = "quicksand-qemu" },
-]
-ubuntu = [
-    { name = "quicksand-ubuntu" },
-]
-ubuntu-desktop = [
-    { name = "quicksand-ubuntu-desktop" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quicksand-alpine", marker = "extra == 'all'", editable = "packages/quicksand-alpine" },
-    { name = "quicksand-alpine", marker = "extra == 'alpine'", editable = "packages/quicksand-alpine" },
-    { name = "quicksand-alpine-desktop", marker = "extra == 'all'", editable = "packages/quicksand-alpine-desktop" },
-    { name = "quicksand-alpine-desktop", marker = "extra == 'alpine-desktop'", editable = "packages/quicksand-alpine-desktop" },
-    { name = "quicksand-base-scaffold", marker = "extra == 'dev'", editable = "packages/dev/quicksand-base-scaffold" },
-    { name = "quicksand-core", editable = "packages/quicksand-core" },
-    { name = "quicksand-image-tools", marker = "extra == 'all'", editable = "packages/dev/quicksand-image-tools" },
-    { name = "quicksand-image-tools", marker = "extra == 'dev'", editable = "packages/dev/quicksand-image-tools" },
-    { name = "quicksand-overlay-scaffold", marker = "extra == 'dev'", editable = "packages/dev/quicksand-overlay-scaffold" },
-    { name = "quicksand-qemu", marker = "extra == 'all'", editable = "packages/quicksand-qemu" },
-    { name = "quicksand-qemu", marker = "extra == 'qemu'", editable = "packages/quicksand-qemu" },
-    { name = "quicksand-ubuntu", marker = "extra == 'all'", editable = "packages/quicksand-ubuntu" },
-    { name = "quicksand-ubuntu", marker = "extra == 'ubuntu'", editable = "packages/quicksand-ubuntu" },
-    { name = "quicksand-ubuntu-desktop", marker = "extra == 'all'", editable = "packages/quicksand-ubuntu-desktop" },
-    { name = "quicksand-ubuntu-desktop", marker = "extra == 'ubuntu-desktop'", editable = "packages/quicksand-ubuntu-desktop" },
-]
-provides-extras = ["qemu", "ubuntu", "alpine", "alpine-desktop", "ubuntu-desktop", "dev", "all"]
-
-[[package]]
-name = "quicksand-alpine"
-version = "0.8.4"
-source = { editable = "packages/quicksand-alpine" }
-dependencies = [
-    { name = "quicksand-core" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "quicksand-image-tools" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-image-tools" }]
-
-[[package]]
-name = "quicksand-alpine-desktop"
-version = "0.8.4"
-source = { editable = "packages/quicksand-alpine-desktop" }
-dependencies = [
-    { name = "quicksand-alpine" },
-    { name = "quicksand-core" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quicksand-alpine", editable = "packages/quicksand-alpine" },
-    { name = "quicksand-core", editable = "packages/quicksand-core" },
-]
-
-[package.metadata.requires-dev]
-dev = []
-
-[[package]]
-name = "quicksand-base-scaffold"
-version = "0.2.4"
-source = { editable = "packages/dev/quicksand-base-scaffold" }
-dependencies = [
-    { name = "quicksand-core" },
-    { name = "tomlkit" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quicksand-core", editable = "packages/quicksand-core" },
-    { name = "tomlkit", specifier = ">=0.13" },
-]
-
-[[package]]
-name = "quicksand-build-tools"
-version = "0.4.4.dev0"
-source = { editable = "packages/dev/quicksand-build-tools" }
-
-[[package]]
-name = "quicksand-core"
-version = "0.10.3.dev0"
-source = { editable = "packages/quicksand-core" }
-dependencies = [
-    { name = "httpx" },
-    { name = "quicksand-smb" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.27,<1.0" },
-    { name = "quicksand-smb", editable = "packages/quicksand-smb" },
-    { name = "pydantic", specifier = ">=2.0" },
-]
-
-[[package]]
-name = "quicksand-gh-runners"
-version = "0.1.0"
-source = { editable = "packages/dev/quicksand-gh-runners" }
-dependencies = [
-    { name = "azure-identity" },
-    { name = "azure-mgmt-compute" },
-    { name = "requests" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "azure-identity" },
-    { name = "azure-mgmt-compute" },
-    { name = "requests" },
-]
-
-[[package]]
-name = "quicksand-image-tools"
-version = "0.4.4.dev0"
-source = { editable = "packages/dev/quicksand-image-tools" }
-dependencies = [
-    { name = "quicksand-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core" }]
-
-[[package]]
-name = "quicksand-overlay-scaffold"
-version = "0.2.4"
-source = { editable = "packages/dev/quicksand-overlay-scaffold" }
-dependencies = [
-    { name = "quicksand-core" },
-    { name = "quicksand-ubuntu" },
-    { name = "tomlkit" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quicksand-core", editable = "packages/quicksand-core" },
-    { name = "quicksand-ubuntu", editable = "packages/quicksand-ubuntu" },
-    { name = "tomlkit", specifier = ">=0.13" },
-]
-
-[[package]]
-name = "quicksand-qemu"
-version = "0.4.8"
-source = { editable = "packages/quicksand-qemu" }
-
-[[package]]
-name = "quicksand-smb"
-version = "0.3.4.dev0"
-source = { editable = "packages/quicksand-smb" }
-
-[[package]]
-name = "quicksand-ubuntu"
-version = "0.8.4"
-source = { editable = "packages/quicksand-ubuntu" }
-dependencies = [
-    { name = "quicksand-core" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "quicksand-image-tools" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-image-tools" }]
-
-[[package]]
-name = "quicksand-ubuntu-desktop"
-version = "0.8.4"
-source = { editable = "packages/quicksand-ubuntu-desktop" }
-dependencies = [
-    { name = "quicksand-core" },
-    { name = "quicksand-ubuntu" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quicksand-core", editable = "packages/quicksand-core" },
-    { name = "quicksand-ubuntu", editable = "packages/quicksand-ubuntu" },
-]
-
-[package.metadata.requires-dev]
-dev = []
-
-[[package]]
 name = "pycparser"
 version = "3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1199,7 +975,7 @@ crypto = [
 
 [[package]]
 name = "pytest"
-version = "9.0.2"
+version = "9.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -1208,9 +984,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901, upload-time = "2025-12-06T21:30:51.014Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/0d/549bd94f1a0a402dc8cf64563a117c0f3765662e2e668477624baeec44d5/pytest-9.0.3.tar.gz", hash = "sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c", size = 1572165, upload-time = "2026-04-07T17:16:18.027Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801, upload-time = "2025-12-06T21:30:49.154Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/24/a372aaf5c9b7208e7112038812994107bc65a84cd00e0354a88c2c77a617/pytest-9.0.3-py3-none-any.whl", hash = "sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9", size = 375249, upload-time = "2026-04-07T17:16:16.13Z" },
 ]
 
 [[package]]
@@ -1301,6 +1077,230 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
 ]
+
+[[package]]
+name = "quicksand"
+version = "0.10.3.dev0"
+source = { editable = "packages/quicksand" }
+dependencies = [
+    { name = "quicksand-core" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "quicksand-alpine" },
+    { name = "quicksand-alpine-desktop" },
+    { name = "quicksand-image-tools" },
+    { name = "quicksand-qemu" },
+    { name = "quicksand-ubuntu" },
+    { name = "quicksand-ubuntu-desktop" },
+]
+alpine = [
+    { name = "quicksand-alpine" },
+]
+alpine-desktop = [
+    { name = "quicksand-alpine-desktop" },
+]
+dev = [
+    { name = "quicksand-base-scaffold" },
+    { name = "quicksand-image-tools" },
+    { name = "quicksand-overlay-scaffold" },
+]
+qemu = [
+    { name = "quicksand-qemu" },
+]
+ubuntu = [
+    { name = "quicksand-ubuntu" },
+]
+ubuntu-desktop = [
+    { name = "quicksand-ubuntu-desktop" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "quicksand-alpine", marker = "extra == 'all'", editable = "packages/quicksand-alpine" },
+    { name = "quicksand-alpine", marker = "extra == 'alpine'", editable = "packages/quicksand-alpine" },
+    { name = "quicksand-alpine-desktop", marker = "extra == 'all'", editable = "packages/quicksand-alpine-desktop" },
+    { name = "quicksand-alpine-desktop", marker = "extra == 'alpine-desktop'", editable = "packages/quicksand-alpine-desktop" },
+    { name = "quicksand-base-scaffold", marker = "extra == 'dev'", editable = "packages/dev/quicksand-base-scaffold" },
+    { name = "quicksand-core", editable = "packages/quicksand-core" },
+    { name = "quicksand-image-tools", marker = "extra == 'all'", editable = "packages/dev/quicksand-image-tools" },
+    { name = "quicksand-image-tools", marker = "extra == 'dev'", editable = "packages/dev/quicksand-image-tools" },
+    { name = "quicksand-overlay-scaffold", marker = "extra == 'dev'", editable = "packages/dev/quicksand-overlay-scaffold" },
+    { name = "quicksand-qemu", marker = "extra == 'all'", editable = "packages/quicksand-qemu" },
+    { name = "quicksand-qemu", marker = "extra == 'qemu'", editable = "packages/quicksand-qemu" },
+    { name = "quicksand-ubuntu", marker = "extra == 'all'", editable = "packages/quicksand-ubuntu" },
+    { name = "quicksand-ubuntu", marker = "extra == 'ubuntu'", editable = "packages/quicksand-ubuntu" },
+    { name = "quicksand-ubuntu-desktop", marker = "extra == 'all'", editable = "packages/quicksand-ubuntu-desktop" },
+    { name = "quicksand-ubuntu-desktop", marker = "extra == 'ubuntu-desktop'", editable = "packages/quicksand-ubuntu-desktop" },
+]
+provides-extras = ["qemu", "ubuntu", "alpine", "alpine-desktop", "ubuntu-desktop", "dev", "all"]
+
+[[package]]
+name = "quicksand-alpine"
+version = "0.8.4"
+source = { editable = "packages/quicksand-alpine" }
+dependencies = [
+    { name = "quicksand-core" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "quicksand-image-tools" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-image-tools" }]
+
+[[package]]
+name = "quicksand-alpine-desktop"
+version = "0.8.4"
+source = { editable = "packages/quicksand-alpine-desktop" }
+dependencies = [
+    { name = "quicksand-alpine" },
+    { name = "quicksand-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "quicksand-alpine", editable = "packages/quicksand-alpine" },
+    { name = "quicksand-core", editable = "packages/quicksand-core" },
+]
+
+[package.metadata.requires-dev]
+dev = []
+
+[[package]]
+name = "quicksand-base-scaffold"
+version = "0.2.4"
+source = { editable = "packages/dev/quicksand-base-scaffold" }
+dependencies = [
+    { name = "quicksand-core" },
+    { name = "tomlkit" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "quicksand-core", editable = "packages/quicksand-core" },
+    { name = "tomlkit", specifier = ">=0.13" },
+]
+
+[[package]]
+name = "quicksand-build-tools"
+version = "0.4.4.dev0"
+source = { editable = "packages/dev/quicksand-build-tools" }
+
+[[package]]
+name = "quicksand-core"
+version = "0.10.3.dev0"
+source = { editable = "packages/quicksand-core" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "quicksand-smb" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27,<1.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "quicksand-smb", editable = "packages/quicksand-smb" },
+]
+
+[[package]]
+name = "quicksand-gh-runners"
+version = "0.1.0"
+source = { editable = "packages/dev/quicksand-gh-runners" }
+dependencies = [
+    { name = "azure-identity" },
+    { name = "azure-mgmt-compute" },
+    { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "azure-identity" },
+    { name = "azure-mgmt-compute" },
+    { name = "requests" },
+]
+
+[[package]]
+name = "quicksand-image-tools"
+version = "0.4.4.dev0"
+source = { editable = "packages/dev/quicksand-image-tools" }
+dependencies = [
+    { name = "quicksand-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core" }]
+
+[[package]]
+name = "quicksand-overlay-scaffold"
+version = "0.2.4"
+source = { editable = "packages/dev/quicksand-overlay-scaffold" }
+dependencies = [
+    { name = "quicksand-core" },
+    { name = "quicksand-ubuntu" },
+    { name = "tomlkit" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "quicksand-core", editable = "packages/quicksand-core" },
+    { name = "quicksand-ubuntu", editable = "packages/quicksand-ubuntu" },
+    { name = "tomlkit", specifier = ">=0.13" },
+]
+
+[[package]]
+name = "quicksand-qemu"
+version = "0.4.8"
+source = { editable = "packages/quicksand-qemu" }
+
+[[package]]
+name = "quicksand-smb"
+version = "0.3.4.dev0"
+source = { editable = "packages/quicksand-smb" }
+
+[[package]]
+name = "quicksand-ubuntu"
+version = "0.8.4"
+source = { editable = "packages/quicksand-ubuntu" }
+dependencies = [
+    { name = "quicksand-core" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "quicksand-image-tools" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-image-tools" }]
+
+[[package]]
+name = "quicksand-ubuntu-desktop"
+version = "0.8.4"
+source = { editable = "packages/quicksand-ubuntu-desktop" }
+dependencies = [
+    { name = "quicksand-core" },
+    { name = "quicksand-ubuntu" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "quicksand-core", editable = "packages/quicksand-core" },
+    { name = "quicksand-ubuntu", editable = "packages/quicksand-ubuntu" },
+]
+
+[package.metadata.requires-dev]
+dev = []
 
 [[package]]
 name = "readme-renderer"
