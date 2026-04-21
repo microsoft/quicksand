@@ -1,0 +1,2 @@
+# Allow quicksand user to run any command without password
+quicksand ALL=(ALL) NOPASSWD: ALL

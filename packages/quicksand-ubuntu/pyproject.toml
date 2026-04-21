@@ -1,0 +1,39 @@
+[project]
+name = "quicksand-ubuntu"
+version = "0.8.4"
+description = "Pre-built Ubuntu 24.04 VM image for quicksand"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "quicksand-core>=0.10.2",
+]
+
+[dependency-groups]
+dev = ["quicksand-image-tools>=0.4.3"]
+
+[build-system]
+requires = ["hatchling", "quicksand-image-tools", "quicksand-core", "quicksand-qemu", "quicksand-smb"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["quicksand_ubuntu"]
+artifacts = [
+  "quicksand_ubuntu/images/*.qcow2",
+  "quicksand_ubuntu/images/*.kernel",
+  "quicksand_ubuntu/images/*.initrd",
+]
+exclude = [
+  "quicksand_ubuntu/docker",
+  "quicksand_ubuntu/docker-desktop",
+]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.uv.sources]
+quicksand-core = { workspace = true }
+quicksand-qemu = { workspace = true }
+# Build hook in hatch_build.py builds images if they don't exist
+
+[project.entry-points."quicksand.images"]
+ubuntu = "quicksand_ubuntu:image"

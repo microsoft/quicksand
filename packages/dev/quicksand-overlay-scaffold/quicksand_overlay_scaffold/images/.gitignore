@@ -1,0 +1,3 @@
+# Build artifacts — generated during uv build
+*
+!.gitignore

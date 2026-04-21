@@ -1,0 +1,120 @@
+# Root pyproject.toml for the quicksand monorepo
+# Individual packages are in packages/
+
+[tool.uv]
+keyring-provider = "subprocess"
+override-dependencies = ["httpx>=0.27,<1"]
+constraint-dependencies = ["setuptools>=78.1.1"]
+
+[tool.uv.workspace]
+members = ["packages/*", "packages/dev/*", "packages/contrib/*"]
+exclude = ["packages/dev", "packages/contrib"]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[[tool.uv.index]]
+name = "azure-msraif"
+url = "https://VssSessionToken@pkgs.dev.azure.com/msraif/_packaging/packages/pypi/simple/"
+explicit = true
+
+[tool.uvr.config]
+latest = "quicksand"
+exclude = ["quicksand-gh-runners"]
+workflow_version = "0.28.1"
+skill_version = "0.27.1a3"
+
+[tool.uvr.matrix]
+aif-agent-sandbox = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+aif-cua-agent-sandbox = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quicksand = [["self-hosted", "linux", "x64"]]
+quicksand-alpine = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quicksand-alpine-desktop = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quicksand-base-scaffold = [["self-hosted", "linux", "x64"]]
+quicksand-core = [["self-hosted", "linux", "x64"]]
+quicksand-image-tools = [["self-hosted", "linux", "x64"]]
+quicksand-overlay-scaffold = [["self-hosted", "linux", "x64"]]
+quicksand-qemu = [["self-hosted", "windows", "x64"], ["self-hosted", "windows", "arm64"], ["self-hosted", "linux", "x64"], ["self-hosted", "linux", "arm64"], ["self-hosted", "macos", "arm64"]]
+quicksand-smb = [["self-hosted", "linux", "x64"]]
+quicksand-ubuntu = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quicksand-ubuntu-desktop = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+
+[tool.uv.sources]
+quicksand = { workspace = true }
+quicksand-core = { workspace = true }
+quicksand-qemu = { workspace = true }
+quicksand-image-tools = { workspace = true }
+quicksand-ubuntu = { workspace = true }
+quicksand-ubuntu-desktop = { workspace = true }
+quicksand-alpine = { workspace = true }
+quicksand-alpine-desktop = { workspace = true }
+quicksand-build-tools = { workspace = true }
+quicksand-smb = { workspace = true }
+quicksand-overlay-scaffold = { workspace = true }
+quicksand-base-scaffold = { workspace = true }
+
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "ty",
+    "poethepoet",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-timeout",
+    "hatchling",
+    "twine",
+    "keyring",
+    "keyrings.artifacts",
+    "uv-release==0.28.1",
+]
+
+[tool.poe.tasks]
+check = ["check-code", "check-format", "check-types"]
+check-code = "ruff check ."
+check-format = "ruff format --check ."
+check-types = "ty check ."
+fix = ["fix-format", "fix-code"]
+fix-format = "ruff format ."
+fix-code = "ruff check --fix --unsafe-fixes ."
+test = "pytest tests/ -x -v --timeout=120 -m 'not docker'"
+test-smb = "pytest tests/unit/smb/ -v --timeout=30"
+release-dry-run = "quicksand-plan-release --format summary"
+release-plan = "quicksand-plan-release"
+test-unit = "pytest tests/unit -v --timeout=60"
+test-integration = "pytest tests/integration -v --timeout=300"
+test-integration-execution = "pytest tests/integration/execution -v --timeout=300"
+test-integration-mounts-readonly = "pytest tests/integration/mounts/readonly -v --timeout=300"
+test-integration-mounts-readwrite = "pytest tests/integration/mounts/readwrite -v --timeout=300"
+test-integration-mounts-multiple = "pytest tests/integration/mounts/multiple -v --timeout=300"
+test-integration-network-unrestricted = "pytest tests/integration/network/unrestricted -v --timeout=300"
+test-integration-checkpoint = "pytest tests/integration/checkpoint -v --timeout=300"
+test-integration-dev = "pytest tests/integration/dev -v --timeout=600 -m docker"
+test-all = "pytest tests/ -x -v --timeout=120"
+ci = ["check-code", "check-format", "check-types", "test"]
+clean = "python scripts/clean.py"
+docs-dev = { shell = "npx vitepress dev docs" }
+docs-build = { shell = "npx vitepress build docs" }
+docs-preview = { shell = "npx vitepress preview docs" }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "module"
+asyncio_default_test_loop_scope = "module"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ty.environment]
+python-version = "3.11"
+extra-paths = ["scripts"]
+
+[tool.ty.src]
+# Scripts meant to run inside sandboxes, not the host
+exclude = ["examples/playwright_vnc/browser_script.py"]

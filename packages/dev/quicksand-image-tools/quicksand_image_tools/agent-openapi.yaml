@@ -1,0 +1,218 @@
+openapi: 3.1.0
+info:
+  title: Quicksand Guest Agent
+  description: |
+    HTTP API running inside the guest VM to handle commands from the host.
+
+    ## Authentication
+    - Token and port are passed via kernel command line (`quicksand_token`, `quicksand_port`)
+    - All endpoints except `/authenticate` require `Authorization: Bearer <token>` header
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:{port}
+    description: Guest VM agent
+    variables:
+      port:
+        default: "8080"
+        description: Port from kernel cmdline `quicksand_port`
+
+security:
+  - tokenAuth: []
+
+components:
+  securitySchemes:
+    tokenAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token from kernel cmdline `quicksand_token`
+
+  schemas:
+    AuthRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: Token to verify
+
+    AuthResponse:
+      type: object
+      required:
+        - authenticated
+      properties:
+        authenticated:
+          type: boolean
+
+    ExecuteRequest:
+      type: object
+      required:
+        - command
+      properties:
+        command:
+          type: string
+          description: Shell command to execute
+        timeout:
+          type: number
+          format: float
+          default: 30.0
+          description: Command timeout in seconds
+        cwd:
+          type: string
+          nullable: true
+          description: Working directory for command execution
+
+    ExecuteResponse:
+      type: object
+      required:
+        - stdout
+        - stderr
+        - exit_code
+      properties:
+        stdout:
+          type: string
+          description: Standard output from command
+        stderr:
+          type: string
+          description: Standard error from command
+        exit_code:
+          type: integer
+          description: Exit code (-1 for timeout/error)
+
+    ExecuteStreamEvent:
+      type: object
+      required:
+        - stream
+      properties:
+        stream:
+          type: string
+          enum: [stdout, stderr, exit]
+        data:
+          type: string
+          description: Output text (for stdout/stderr events)
+        exit_code:
+          type: integer
+          description: Process exit code (for exit events only)
+
+    PingResponse:
+      type: object
+      required:
+        - pong
+        - pid
+      properties:
+        pong:
+          type: boolean
+          const: true
+        pid:
+          type: integer
+          description: Agent process ID
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+
+paths:
+  /authenticate:
+    post:
+      summary: Verify authentication token
+      description: |
+        Verify that a token is valid. This endpoint does NOT require
+        the Authorization header - the token is passed in the request body.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+      responses:
+        '200':
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /execute:
+    post:
+      summary: Execute a shell command
+      description: |
+        Run a shell command in the guest VM and return stdout, stderr, and exit code.
+        Commands are executed via `/bin/sh -c`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteRequest'
+      responses:
+        '200':
+          description: Command executed (check exit_code for success)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteResponse'
+        '401':
+          description: Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /execute_stream:
+    post:
+      summary: Execute a shell command with streaming output
+      description: |
+        Run a shell command and stream stdout/stderr as SSE events in real-time.
+        Same request body as /execute. The response is a text/event-stream where
+        each event has a JSON payload with "stream" (stdout/stderr/exit) and
+        "data" or "exit_code" fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteRequest'
+      responses:
+        '200':
+          description: SSE stream of command output
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ExecuteStreamEvent'
+        '401':
+          description: Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ping:
+    get:
+      summary: Health check
+      description: Simple health check that returns the agent's process ID.
+      responses:
+        '200':
+          description: Agent is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+        '401':
+          description: Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

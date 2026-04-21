@@ -1,0 +1,27 @@
+[package]
+name = "quicksand-guest-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal guest agent for quicksand VMs (quicksand-guest-agent)"
+license = "MIT"
+
+[dependencies]
+# Async runtime - multi-threaded for concurrent request handling
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "process", "time", "fs", "macros"] }
+
+# HTTP server - lightweight
+axum = { version = "0.7", default-features = false, features = ["json", "tokio", "http1"] }
+
+# JSON serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SSE streaming support
+tokio-stream = "0.1"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Link-time optimization
+codegen-units = 1   # Single codegen unit for better optimization
+panic = "abort"     # Abort on panic (smaller binary)
+strip = true        # Strip symbols

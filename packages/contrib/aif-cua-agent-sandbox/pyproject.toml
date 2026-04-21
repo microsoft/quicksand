@@ -1,0 +1,35 @@
+[project]
+name = "aif-cua-agent-sandbox"
+version = "0.2.4"
+description = "Overlay image package for quicksand"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "quicksand-core>=0.10.2",
+    "aif-agent-sandbox>=0.3.4",
+]
+
+
+[project.entry-points."quicksand.images"]
+aif-cua-agent-sandbox = "aif_cua_agent_sandbox:image"
+
+
+[build-system]
+requires = ["hatchling", "quicksand-image-tools", "quicksand-core", "aif-agent-sandbox", "quicksand-ubuntu", "quicksand-qemu", "quicksand-smb"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aif_cua_agent_sandbox"]
+artifacts = [
+    "aif_cua_agent_sandbox/images/manifest.json",
+    "aif_cua_agent_sandbox/images/overlays/*.qcow2",
+]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.uv.sources]
+quicksand-ubuntu = { workspace = true }
+quicksand-core = { workspace = true }
+quicksand-qemu = { workspace = true }
+aif-agent-sandbox = { workspace = true }

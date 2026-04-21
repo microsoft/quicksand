@@ -1,0 +1,16 @@
+[Unit]
+Description=Quicksand Guest Agent
+# Start as early as possible. With virtio-serial transport, the agent
+# does not need networking — the chardev is available at sysinit.
+# Falls back to HTTP on TCP if virtio-serial port is absent.
+After=sysinit.target
+Wants=sysinit.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/quicksand-guest-agent
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

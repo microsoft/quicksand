@@ -1,0 +1,37 @@
+[project]
+name = "quicksand-base-scaffold"
+version = "0.2.4"
+description = "Template base image package for quicksand"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "quicksand-core>=0.10.2",
+    "tomlkit>=0.13",
+]
+
+[project.scripts]
+quicksand-base-scaffold = "quicksand_base_scaffold.scaffold:main"
+
+[project.entry-points."quicksand.images"]
+quicksand-base-scaffold = "quicksand_base_scaffold:image"
+
+
+[build-system]
+requires = ["hatchling", "quicksand-image-tools", "quicksand-core", "quicksand-qemu", "quicksand-smb"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["quicksand_base_scaffold"]
+artifacts = [
+    "quicksand_base_scaffold/images/*.qcow2",
+    "quicksand_base_scaffold/images/*.kernel",
+    "quicksand_base_scaffold/images/*.initrd",
+    "quicksand_base_scaffold/docker/*",
+]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.uv.sources]
+quicksand-image-tools = { workspace = true }
+quicksand-core = { workspace = true }
+quicksand-qemu = { workspace = true }

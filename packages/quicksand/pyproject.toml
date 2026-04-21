@@ -1,0 +1,42 @@
+[project]
+name = "quicksand"
+version = "0.10.3.dev0"
+description = "A VM harness for AI agents that works on macOS, Linux, and Windows."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "quicksand-core>=0.10.3.dev0",
+]
+
+[project.optional-dependencies]
+qemu = ["quicksand-qemu>=0.4.3"]
+ubuntu = ["quicksand-ubuntu>=0.7.2"]
+alpine = ["quicksand-alpine>=0.7.2"]
+alpine-desktop = ["quicksand-alpine-desktop>=0.7.5"]
+ubuntu-desktop = ["quicksand-ubuntu-desktop>=0.7.5"]
+dev = ["quicksand-image-tools>=0.3.2", "quicksand-overlay-scaffold>=0.1.4", "quicksand-base-scaffold>=0.1.3"]
+all = [
+    "quicksand-qemu>=0.4.3",
+    "quicksand-ubuntu>=0.7.2",
+    "quicksand-alpine>=0.7.2",
+    "quicksand-alpine-desktop>=0.7.5",
+    "quicksand-ubuntu-desktop>=0.7.5",
+    "quicksand-image-tools>=0.3.2",
+]
+
+[project.scripts]
+quicksand = "quicksand.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["quicksand"]
+
+[tool.uv.sources]
+quicksand-overlay-scaffold = { workspace = true }
+quicksand-base-scaffold = { workspace = true }
+quicksand-core = { workspace = true }
+quicksand-qemu = { workspace = true }

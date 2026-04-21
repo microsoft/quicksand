@@ -1,0 +1,10 @@
+[Match]
+# Match both predictable names (en*: ens3, enp0s3) and classic names (eth0)
+# Classic names are used by virtio-mmio devices (microvm machine type)
+Name=e*
+
+[Network]
+# Static IP — QEMU slirp always uses 10.0.2.0/24
+Address=10.0.2.15/24
+Gateway=10.0.2.2
+DNS=10.0.2.3

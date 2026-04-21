@@ -1,0 +1,22 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call: {}
+
+jobs:
+  checks:
+    runs-on: [self-hosted, linux, x64]
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [check-code, check-format, check-types, test-unit, test-smb]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          clean: true
+      - uses: astral-sh/setup-uv@v7
+      - run: uv run poe ${{ matrix.task }}

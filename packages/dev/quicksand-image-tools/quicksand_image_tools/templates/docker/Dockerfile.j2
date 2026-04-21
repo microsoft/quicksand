@@ -1,0 +1,70 @@
+# Quicksand {{ name_title }} Base Image
+#
+# This Dockerfile creates a minimal {{ name_title }} system suitable for
+# running as a quicksand VM guest.
+#
+# TODO: Customize this Dockerfile for your Linux distribution.
+# See packages/quicksand-ubuntu/quicksand_ubuntu/docker/Dockerfile for a complete example.
+
+# =============================================================================
+# Stage 1: Build the Rust agent
+# =============================================================================
+# Use rust:alpine for musl (Alpine) or rust:bookworm for glibc (Ubuntu/Debian)
+FROM rust:alpine AS agent-builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY agent/Cargo.toml agent/Cargo.lock* ./
+COPY agent/src ./src
+
+RUN cargo build --release && \
+    strip /build/target/release/quicksand-guest-agent
+
+# =============================================================================
+# Stage 2: Create the VM image
+# =============================================================================
+# TODO: Set the base Docker image (e.g., ubuntu:24.04, alpine:3.21, debian:12)
+FROM {{ name }}:latest
+
+# TODO: Install kernel and required packages
+# Required packages:
+#   - Linux kernel with virtio support
+#   - Init system (systemd or OpenRC)
+#   - sudo
+#   - curl, ca-certificates (for network operations)
+
+# TODO: Create quicksand user with passwordless sudo
+# RUN useradd -m -s /bin/bash -G sudo quicksand
+# COPY quicksand-sudoers /etc/sudoers.d/quicksand
+# RUN chmod 440 /etc/sudoers.d/quicksand
+
+# TODO: Enable 9p kernel modules for host file sharing
+# RUN echo "9p" >> /etc/modules && \
+#     echo "9pnet" >> /etc/modules && \
+#     echo "9pnet_virtio" >> /etc/modules
+
+# TODO: Configure DHCP networking
+# For systemd:
+# COPY 80-dhcp.network /etc/systemd/network/
+# RUN systemctl enable systemd-networkd
+#
+# For OpenRC:
+# COPY interfaces /etc/network/interfaces
+# RUN rc-update add networking boot
+
+# Copy the Rust agent binary
+COPY --from=agent-builder /build/target/release/quicksand-guest-agent /usr/local/bin/quicksand-guest-agent
+RUN chmod +x /usr/local/bin/quicksand-guest-agent
+
+# TODO: Configure the agent to run on boot
+# For systemd:
+# RUN echo '[Unit]\nDescription=Quicksand Guest Agent\nAfter=network.target\n\n[Service]\nExecStart=/usr/local/bin/quicksand-guest-agent\nRestart=always\n\n[Install]\nWantedBy=multi-user.target' > /etc/systemd/system/quicksand-guest-agent.service && \
+#     systemctl enable quicksand-guest-agent
+#
+# For OpenRC:
+# RUN echo '#!/sbin/openrc-run\ncommand="/usr/local/bin/quicksand-guest-agent"\ncommand_background="yes"\npidfile="/run/quicksand-guest-agent.pid"' > /etc/init.d/quicksand-guest-agent && \
+#     chmod +x /etc/init.d/quicksand-guest-agent && \
+#     rc-update add quicksand-guest-agent default
+
+CMD ["/sbin/init"]

@@ -1,0 +1,18 @@
+[project]
+name = "quicksand-qemu"
+version = "0.4.8"
+description = "Bundled QEMU binaries for the quicksand VM harness."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[build-system]
+requires = ["hatchling", "quicksand-build-tools"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["quicksand_qemu"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+# Build hook in hatch_build.py bundles QEMU binaries

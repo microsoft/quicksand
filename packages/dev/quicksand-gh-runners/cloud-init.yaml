@@ -1,0 +1,47 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - curl
+  - jq
+  - git
+  - build-essential
+
+runcmd:
+  # Docker Buildx
+  - mkdir -p /usr/local/lib/docker/cli-plugins
+  - |
+    BUILDX_VERSION=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | jq -r '.tag_name')
+    BUILDX_ARCH=$(dpkg --print-architecture)
+    curl -fLo /usr/local/lib/docker/cli-plugins/docker-buildx \
+      "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${BUILDX_ARCH}"
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+
+  # uv
+  - curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
+
+  # Keyring for Azure Artifacts auth (uses managed identity)
+  - uv tool install keyring --with keyrings.artifacts
+
+  # KVM (x64 only, harmless no-op on arm64)
+  - modprobe kvm 2>/dev/null || true
+  - modprobe kvm_intel 2>/dev/null || modprobe kvm_amd 2>/dev/null || true
+  - chmod 666 /dev/kvm 2>/dev/null || true
+
+  # Runner user (with passwordless sudo)
+  - useradd -m runner
+  - usermod -aG docker runner
+  - usermod -aG kvm runner 2>/dev/null || true
+  - echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner
+
+  # Pre-download runner agent
+  - |
+    RUNNER_VERSION=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "aarch64" ]; then RUNNER_ARCH="arm64"; else RUNNER_ARCH="x64"; fi
+    mkdir -p /home/runner/actions-runner
+    cd /home/runner/actions-runner
+    curl -fLo runner.tar.gz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz"
+    tar xzf runner.tar.gz
+    rm runner.tar.gz
+    chown -R runner:runner /home/runner/actions-runner
