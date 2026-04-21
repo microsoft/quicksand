@@ -115,7 +115,8 @@ class Hook(ReleaseHook):
                 f" --clobber || true"
             )
         install_lines.append(
-            "uv pip install --reinstall --find-links dist/ quicksand quicksand-ubuntu quicksand-alpine"
+            "uv pip install --reinstall --find-links dist/"
+            " quicksand quicksand-ubuntu quicksand-alpine"
         )
         install = "\n".join(install_lines)
         plan.test_install = {  # ty: ignore[unresolved-attribute]

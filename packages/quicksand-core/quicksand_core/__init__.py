@@ -18,8 +18,8 @@ from ._types import (
     MountHandle,
     MountType,
     NetworkMode,
-    QuicksandGuestAgentMethod,
     PortForward,
+    QuicksandGuestAgentMethod,
     ResolvedImage,
     SaveManifest,
 )
