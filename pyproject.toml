@@ -27,19 +27,19 @@ workflow_version = "0.28.1"
 skill_version = "0.27.1a3"
 
 [tool.uvr.matrix]
-aif-agent-sandbox = [["ubuntu-latest"], ["macos-latest"]]
-aif-cua-agent-sandbox = [["ubuntu-latest"], ["macos-latest"]]
+aif-agent-sandbox = [["ubuntu-latest"], ["self-hosted", "macos", "arm64"]]
+aif-cua-agent-sandbox = [["ubuntu-latest"], ["self-hosted", "macos", "arm64"]]
 quicksand = [["ubuntu-latest"]]
-quicksand-alpine = [["ubuntu-latest"], ["macos-latest"]]
-quicksand-alpine-desktop = [["ubuntu-latest"], ["macos-latest"]]
+quicksand-alpine = [["ubuntu-latest"], ["self-hosted", "macos", "arm64"]]
+quicksand-alpine-desktop = [["ubuntu-latest"], ["self-hosted", "macos", "arm64"]]
 quicksand-base-scaffold = [["ubuntu-latest"]]
 quicksand-core = [["ubuntu-latest"]]
 quicksand-image-tools = [["ubuntu-latest"]]
 quicksand-overlay-scaffold = [["ubuntu-latest"]]
-quicksand-qemu = [["windows-latest"], ["ubuntu-latest"], ["macos-latest"]]
+quicksand-qemu = [["windows-latest"], ["ubuntu-latest"], ["self-hosted", "macos", "arm64"], ["self-hosted", "linux", "arm64"]]
 quicksand-smb = [["ubuntu-latest"]]
-quicksand-ubuntu = [["ubuntu-latest"], ["macos-latest"]]
-quicksand-ubuntu-desktop = [["ubuntu-latest"], ["macos-latest"]]
+quicksand-ubuntu = [["ubuntu-latest"], ["self-hosted", "macos", "arm64"]]
+quicksand-ubuntu-desktop = [["ubuntu-latest"], ["self-hosted", "macos", "arm64"]]
 
 [tool.uv.sources]
 quicksand = { workspace = true }

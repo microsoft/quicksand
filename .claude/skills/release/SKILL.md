@@ -12,6 +12,16 @@ For first-time setup, scaffold the workflow with `uvr workflow init` (see `refer
 
 If the project has existing CI checks (tests, linting, etc.) that aren't yet wired into the release workflow, see `references/custom-jobs.md` before your first release.
 
+## 0. Self-hosted runner
+
+The arm64 macOS builds require a self-hosted runner. Before dispatching, start the runner agent in a background shell:
+
+```bash
+gha-runners/local/run.sh &
+```
+
+Confirm it registers with GitHub before proceeding.
+
 ## 1. Branch
 
 You must not be on main. If you are, create a release branch and switch to it.

@@ -15,6 +15,9 @@ param windowsAdminPassword string
 @description('Object ID of the Key Vault admin user')
 param kvAdminObjectId string
 
+@description('Admin username for all runner VMs')
+param adminUsername string = 'runneradmin'
+
 // Variables
 var prefix = 'quicksand'
 var vnetName = 'vnet-${prefix}-runners'
@@ -169,13 +172,13 @@ resource linuxVms 'Microsoft.Compute/virtualMachines@2024-03-01' = [
       }
       osProfile: {
         computerName: take(runner.name, 15)
-        adminUsername: 'runneradmin'
+        adminUsername: adminUsername
         linuxConfiguration: {
           disablePasswordAuthentication: true
           ssh: {
             publicKeys: [
               {
-                path: '/home/runneradmin/.ssh/authorized_keys'
+                path: '/home/${adminUsername}/.ssh/authorized_keys'
                 keyData: sshPublicKey
               }
             ]
@@ -245,7 +248,7 @@ resource winVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     }
     osProfile: {
       computerName: 'runner-win'
-      adminUsername: 'runneradmin'
+      adminUsername: adminUsername
       adminPassword: windowsAdminPassword
     }
   }

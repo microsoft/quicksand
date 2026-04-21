@@ -52,3 +52,6 @@ node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 .DS_Store
+
+# GHA runners — track cloud infra, ignore local runner agent
+gha-runners/local/

@@ -15,7 +15,7 @@ from uv_release_monorepo.shared.models import BuildStage, ReleasePlan
 # macOS because the Linux arm64 runners lack KVM for overlay builds.
 RETAG_RUNNERS: list[list[str]] = [
     ["ubuntu-latest"],
-    ["macos-latest"],
+    ["self-hosted", "macos", "arm64"],
 ]
 
 _WHEEL_RE = re.compile(
