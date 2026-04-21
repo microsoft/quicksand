@@ -14,8 +14,8 @@ from uv_release_monorepo.shared.models import BuildStage, ReleasePlan
 # x64 images are built natively on Linux; arm64 images are built on
 # macOS because the Linux arm64 runners lack KVM for overlay builds.
 RETAG_RUNNERS: list[list[str]] = [
-    ["self-hosted", "linux", "x64"],
-    ["self-hosted", "macos", "arm64"],
+    ["ubuntu-latest"],
+    ["macos-latest"],
 ]
 
 _WHEEL_RE = re.compile(

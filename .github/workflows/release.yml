@@ -15,7 +15,8 @@ jobs:
   # Validate
   # --------------------------------------------------------------------------
   uvr-validate:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    environment: release
     steps:
     - uses: actions/checkout@v6
     - id: setup-uv
@@ -38,7 +39,8 @@ jobs:
   # --------------------------------------------------------------------------
   check:
     needs: [uvr-validate]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    environment: release
     strategy:
       fail-fast: true
       matrix:
@@ -92,7 +94,8 @@ jobs:
   verify-licenses:
     needs: [uvr-validate, uvr-build]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'verify-licenses')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    environment: release
     steps:
     - uses: actions/checkout@v6
     - uses: astral-sh/setup-uv@v7
@@ -109,7 +112,8 @@ jobs:
   test:
     needs: [uvr-build, verify-licenses]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'test')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 15
     strategy:
       fail-fast: true
@@ -152,7 +156,8 @@ jobs:
   # --------------------------------------------------------------------------
   uvr-release:
     needs: [uvr-build, verify-licenses, test]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-release') }}
     steps:
     - id: checkout
@@ -182,7 +187,8 @@ jobs:
   publish:
     needs: [uvr-validate, check, uvr-build, verify-licenses, uvr-release]
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'publish') }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    environment: release
     steps:
     - uses: actions/checkout@v6
       with:
@@ -206,7 +212,8 @@ jobs:
   # Bump — post-release version bump
   # --------------------------------------------------------------------------
   uvr-bump:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-bump') }}
     needs:
     - uvr-release
