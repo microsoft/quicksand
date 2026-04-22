@@ -17,10 +17,17 @@ If the project has existing CI checks (tests, linting, etc.) that aren't yet wir
 The arm64 macOS builds require a self-hosted runner. Before dispatching, start the runner agent in a background shell:
 
 ```bash
+rm -rf gha-runners/local/_diag && mkdir -p gha-runners/local/_diag
 gha-runners/local/run.sh &
 ```
 
-Confirm it registers with GitHub before proceeding.
+Clean stale diagnostic logs first (they cause "file already exists" errors on re-runs), then confirm the runner registers with GitHub before proceeding. Also start the cloud runners if they were shut down by auto-shutdown:
+
+```bash
+az vm start --resource-group rg-quicksand-runners --name quicksand-runner-x64 --no-wait
+az vm start --resource-group rg-quicksand-runners --name quicksand-runner-arm64 --no-wait
+az vm start --resource-group rg-quicksand-runners --name quicksand-runner-win --no-wait
+```
 
 ## 1. Branch
 
