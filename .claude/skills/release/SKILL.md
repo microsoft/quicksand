@@ -23,6 +23,11 @@ gha-runners/local/run.sh
 
 Clean stale diagnostic logs and work dirs first (they cause "file already exists" errors). The runner is a long-running process — do NOT run it in a loop. Start it once in a background shell and it will pick up jobs as they arrive.
 
+**Troubleshooting:**
+- **"A session for this runner already exists"**: Another runner process is already running. Kill it first: `pkill -f Runner.Listener` then retry.
+- **"file already exists" error in Set up job**: Stale `_diag/` files from a previous run. Clean with `rm -rf gha-runners/local/_diag`.
+- **NEVER start multiple runner processes.** Each `run.sh` invocation creates a persistent process. Check with `ps aux | grep Runner.Listener` before starting a new one.
+
 Also start the cloud runners if they were shut down by auto-shutdown:
 
 ```bash
