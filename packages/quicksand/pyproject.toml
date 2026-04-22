@@ -1,6 +1,6 @@
 [project]
 name = "quicksand"
-version = "0.10.3"
+version = "0.10.4.dev0"
 description = "A VM harness for AI agents that works on macOS, Linux, and Windows."
 readme = "README.md"
 requires-python = ">=3.11"

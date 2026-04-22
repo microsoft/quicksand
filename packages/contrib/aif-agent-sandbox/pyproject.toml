@@ -1,6 +1,6 @@
 [project]
 name = "aif-agent-sandbox"
-version = "0.3.4"
+version = "0.3.5.dev0"
 description = "Overlay image package for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
