@@ -240,11 +240,11 @@ All mixins share state through flat typed attributes declared on `_SandboxProtoc
 
 `host/os_.py` provides OS-level configuration including accelerator detection:
 
-| Class | Accelerator | Disk AIO | microvm |
-|-------|-------------|----------|---------|
-| `LinuxConfig` | KVM | io_uring | Yes |
-| `DarwinConfig` | HVF | default | No |
-| `WindowsConfig` | WHPX | default | No |
+| Class | Accelerator | Disk AIO |
+|-------|-------------|----------|
+| `LinuxConfig` | KVM | io_uring |
+| `DarwinConfig` | HVF | default |
+| `WindowsConfig` | WHPX | default |
 
 ### QEMU configuration (`qemu/`)
 
@@ -252,7 +252,7 @@ All mixins share state through flat typed attributes declared on `_SandboxProtoc
 
 | Class | Default Machine | QEMU Binary | virtio Bus |
 |-------|-----------------|-------------|------------|
-| `X86_64Config` | Q35 (or microvm with KVM) | qemu-system-x86_64 | PCI or MMIO |
+| `X86_64Config` | Q35 | qemu-system-x86_64 | PCI |
 | `ARM64Config` | VIRT | qemu-system-aarch64 | MMIO |
 
 `qemu/platform.py` composes arch + OS into `PlatformConfig` and provides:
@@ -531,14 +531,12 @@ The lifecycle mixin auto-unpacks `.quicksand` bundles during `start()`.
 
 ```
 -nodefaults             # blank slate — only explicitly configured devices
--machine {type}         # microvm (Linux x86_64+KVM) or q35 (x86_64 other) or virt (ARM64)
+-machine {type}         # q35 (x86_64) or virt (ARM64)
 -m {memory}             # guest RAM
 -smp {cpus}             # virtual CPU count
 ```
 
 `-nodefaults` prevents QEMU from creating its usual set of default devices (floppy, CD-ROM, VGA, serial). Every device is explicit.
-
-`microvm` is an ultra-minimal machine type without PCI or ACPI. It boots ~4x faster than Q35 because there's no device enumeration overhead. It uses virtio-mmio devices instead of virtio-pci. Only available on Linux x86_64 + KVM.
 
 ### CPU and acceleration
 
@@ -563,7 +561,7 @@ Acceleration is auto-detected. KVM is found via `/dev/kvm`, HVF via `sysctl kern
 
 `aio=io_uring` (Linux only) uses the modern io_uring kernel API instead of blocking threads for async I/O, reducing disk latency by ~50%. Falls back to `threads` on macOS and Windows.
 
-`virtio-blk-pci` (Q35/VIRT machines) or `virtio-blk-device` (microvm) is the paravirtualized block device. It is much faster than emulated IDE or SCSI.
+`virtio-blk-pci` (Q35) or `virtio-blk-device` (VIRT) is the paravirtualized block device. It is much faster than emulated IDE or SCSI.
 
 ### Display and console
 
@@ -618,13 +616,13 @@ Starts the QMP server on a random free port alongside QEMU. TCP transport is use
 
 ### Performance by platform
 
-| Platform | Machine | Disk AIO | IOThreads | Boot speedup |
-|----------|---------|----------|-----------|--------------|
-| Linux x86_64 + KVM | microvm | io_uring | Yes | ~4x |
-| Linux ARM64 + KVM | virt | io_uring | Yes | baseline |
-| macOS (HVF) | q35/virt | threads | Yes | baseline |
-| Windows (WHPX) | q35 | threads | Yes | baseline |
-| Any + TCG | q35/virt | varies | Yes | baseline |
+| Platform | Machine | Disk AIO | IOThreads |
+|----------|---------|----------|-----------|
+| Linux x86_64 + KVM | q35 | io_uring | Yes |
+| Linux ARM64 + KVM | virt | io_uring | Yes |
+| macOS (HVF) | q35/virt | threads | Yes |
+| Windows (WHPX) | q35 | threads | Yes |
+| Any + TCG | q35/virt | varies | Yes |
 
 ---
 
@@ -694,7 +692,7 @@ Starts the QMP server on a random free port alongside QEMU. TCP transport is use
 | **Kernel cmdline** | Parameters passed to the Linux kernel via QEMU's `-append` flag; readable from `/proc/cmdline` inside the VM. Quicksand passes the agent token and port this way. |
 | **[Hardware acceleration](https://www.qemu.org/docs/master/system/introduction.html#virtualisation-accelerators)** | Using CPU virtualization extensions for near-native VM performance: **KVM** (Linux), **HVF** (macOS), **WHPX** (Windows). |
 | **[TCG](https://www.qemu.org/docs/master/devel/tcg.html)** | Tiny Code Generator — QEMU's software emulation fallback. ~10-50x slower but works everywhere. |
-| **[Machine type](https://www.qemu.org/docs/master/system/invocation.html#hxtool-1)** | Virtual hardware platform: **microvm** (ultra-minimal, ~4x faster boot, Linux x86_64+KVM only), **Q35** (modern Intel chipset, x86_64), **VIRT** (ARM64 paravirt). |
+| **[Machine type](https://www.qemu.org/docs/master/system/invocation.html#hxtool-1)** | Virtual hardware platform: **Q35** (modern Intel chipset, x86_64), **VIRT** (ARM64 paravirt). |
 | **[virtio](https://www.qemu.org/docs/master/system/devices/virtio.html)** | Paravirtualized I/O — efficient virtual devices where the guest knows it's virtualized. Used for disk, network, and filesystem sharing. |
 | **CIFS** | Common Internet File System — the protocol used by quicksand for host→guest file sharing. The host runs a pure-Python SMB3 server (`quicksand-smb`); the guest mounts via `mount -t cifs`. |
 | **[User-mode networking](https://www.qemu.org/docs/master/system/devices/net.html#using-the-user-mode-network-stack)** | QEMU's built-in NAT (slirp). Guest gets a private IP (10.0.2.x), host gateway at 10.0.2.2. `restrict=on` blocks guest outbound but guestfwd tunnels still work; `restrict=off` allows full bidirectional. |

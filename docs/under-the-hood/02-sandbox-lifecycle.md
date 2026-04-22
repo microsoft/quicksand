@@ -41,10 +41,7 @@ The `-machine` flag is selected automatically based on architecture and platform
 | Architecture | Platform | Machine | Why |
 |---|---|---|---|
 | ARM64 | Any | `virt` | ARM's standard virtual machine type |
-| x86_64 | Linux + KVM | `microvm` | Minimal machine, ~4x faster boot |
-| x86_64 | macOS / Windows / TCG | `q35` | Full-featured Intel chipset |
-
-`microvm` is only used on Linux x86_64 with KVM and when the firmware file `bios-microvm.bin` exists in the data directory. It skips PCI bus emulation entirely, using MMIO (memory-mapped) virtio devices instead.
+| x86_64 | Any | `q35` | Full-featured Intel chipset |
 
 ## Hardware acceleration
 
@@ -73,9 +70,8 @@ The machine type determines how virtio devices are attached:
 |---|---|---|---|
 | `virt` (ARM64) | `virtio-blk-device` | `virtio-net-device` | MMIO |
 | `q35` (x86_64) | `virtio-blk-pci` | `virtio-net-pci` | PCI |
-| `microvm` (x86_64+KVM) | `virtio-blk-device` | `virtio-net-device` | MMIO |
 
-PCI devices have a small overhead from bus emulation. MMIO devices (used by `virt` and `microvm`) skip this entirely.
+PCI devices have a small overhead from bus emulation. MMIO devices (used by `virt`) skip this entirely.
 
 ## Full assembled command
 

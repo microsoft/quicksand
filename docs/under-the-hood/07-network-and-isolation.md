@@ -33,7 +33,7 @@ Sandbox(image="ubuntu", network_mode=NetworkMode.NONE)
 -nic none
 ```
 
-The only difference between `MOUNTS_ONLY` and `FULL` is `restrict=on` vs no restrict. On `microvm`, `NetworkMode.NONE` produces no network flags at all (microvm doesn't need `-nic none`).
+The only difference between `MOUNTS_ONLY` and `FULL` is `restrict=on` vs no restrict.
 
 ## How `restrict=on` works
 
@@ -71,9 +71,8 @@ The device type depends on machine type:
 |---|---|---|
 | `virt` (ARM64) | `virtio-net-device` | MMIO |
 | `q35` (x86_64) | `virtio-net-pci` | PCI |
-| `microvm` (x86_64+KVM) | `virtio-net-device` | MMIO |
 
-On non-microvm x86_64 machines, an additional flag suppresses PXE boot:
+On x86_64 machines, an additional flag suppresses PXE boot:
 
 ```bash
 -global virtio-net-pci.romfile=

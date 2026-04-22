@@ -54,10 +54,12 @@ from quicksand_core import (
     SandboxConfigParams,
     SaveManifest,
     detect_accelerator,
+    ensure_runtime,
     get_accelerator,
     get_machine_type,
     get_platform_config,
     get_runtime,
+    install_qemu,
     is_runtime_available,
 )
 
@@ -120,6 +122,8 @@ __all__ = [  # noqa: RUF022
     "RuntimeInfo",
     "is_runtime_available",
     "get_machine_type",
+    "ensure_runtime",
+    "install_qemu",
     # Accelerator
     "get_accelerator",
     "detect_accelerator",

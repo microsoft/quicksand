@@ -4,26 +4,13 @@ Companion to [Performance](../user-guide/08-performance.md).
 
 ## Boot time: machine type
 
-The biggest boot-time win is the machine type:
+The machine type affects boot time:
 
 | Machine | Boot time | Why |
 |---|---|---|
-| `microvm` | < 1 second | No PCI bus, no firmware, no device enumeration |
 | `q35` / `virt` | ~2-3 seconds | Full chipset emulation, firmware device scan |
 
-`microvm` is auto-selected on Linux x86_64 + KVM when `bios-microvm.bin` is present. It uses MMIO devices instead of PCI:
-
-```bash
-# microvm (fast):
--machine microvm \
--device virtio-blk-device,drive=drive0,iothread=iothread0 \
--device virtio-net-device,netdev=net0
-
-# q35 (standard):
--machine q35 \
--device virtio-blk-pci,drive=drive0,iothread=iothread0 \
--device virtio-net-pci,netdev=net0
-```
+Direct kernel boot (see below) is the primary boot-time optimization, skipping BIOS/UEFI entirely.
 
 ## Boot time: direct kernel boot
 

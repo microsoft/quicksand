@@ -3,12 +3,12 @@
 Provides machine types and virtio device names for each supported CPU architecture.
 
 Machine types:
-- x86_64: q35 (default) or microvm (with KVM for ~4x faster boot)
+- x86_64: q35
 - ARM64: virt
 
 Device types vary by machine:
 - PCI machines (q35): virtio-blk-pci, virtio-net-pci
-- MMIO machines (virt, microvm): virtio-blk-device, virtio-net-device
+- MMIO machines (virt): virtio-blk-device, virtio-net-device
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ class MachineType(StrEnum):
 
     VIRT = "virt"
     Q35 = "q35"
-    MICROVM = "microvm"
 
 
 class BaseArchitectureConfig(ABC):

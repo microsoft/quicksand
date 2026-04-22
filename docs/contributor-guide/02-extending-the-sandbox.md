@@ -31,7 +31,7 @@ Export from `quicksand_core` and the `quicksand` wrapper if it's public API.
 ## Add a new OS
 
 1. Add `OS.FREEBSD` to the enum in `host/os_.py`
-2. Create `FreeBSDConfig(BaseOSConfig)` and implement `detect_accelerator()`, `disk_aio`, `supports_microvm`, etc.
+2. Create `FreeBSDConfig(BaseOSConfig)` and implement `detect_accelerator()`, `disk_aio`, etc.
 3. Add the detection branch in `OSConfig.__new__()` and `_detect_os()`
 4. If it needs unique QEMU flags, handle them in `build_qemu_command()` (`qemu/platform.py`)
 

@@ -272,7 +272,7 @@ uv run poe check  # type-check, lint, and run tests
 | Save and Rollback | [Checkpoints, reverts, persistent saves](docs/user-guide/05-save-and-rollback.md) | [qcow2 overlays, `savevm`, `blockdev-snapshot-sync`](docs/under-the-hood/05-save-and-rollback.md) |
 | Desktop Control | [Screenshots, keyboard, mouse](docs/user-guide/06-desktop-control.md) | [VNC, GPU, USB tablet, QMP input injection](docs/under-the-hood/06-desktop-control.md) |
 | Network and Isolation | [Network modes, port forwarding](docs/user-guide/07-network-and-isolation.md) | [SLIRP NAT, `restrict=on`, `guestfwd`](docs/under-the-hood/07-network-and-isolation.md) |
-| Performance | [What makes it fast](docs/user-guide/08-performance.md) | [`microvm`, `io_uring`, IOThreads, TCG vs KVM](docs/under-the-hood/08-performance.md) |
+| Performance | [What makes it fast](docs/user-guide/08-performance.md) | [`io_uring`, IOThreads, TCG vs KVM](docs/under-the-hood/08-performance.md) |
 
 ### Contributing
 

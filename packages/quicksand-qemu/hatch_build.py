@@ -122,28 +122,6 @@ class RuntimeBuildHook(BuildHookInterface):
                     "Ensure QEMU and seabios/ipxe-qemu are installed."
                 )
 
-        # Optional files for performance optimizations
-        # These enable faster boot with microvm machine type on Linux x86_64 + KVM
-        optional_files = {
-            "bios-microvm.bin": [
-                qemu_share_dir_windows / "bios-microvm.bin",  # Windows (Stefan Weil)
-                qemu_share_dir_linux / "bios-microvm.bin",  # macOS/Linux
-                Path("/usr/share/qemu/bios-microvm.bin"),  # Standard Linux
-                Path("/usr/share/seabios/bios-microvm.bin"),  # Ubuntu seabios
-            ],
-        }
-
-        for filename, search_paths in optional_files.items():
-            for src in search_paths:
-                if src.exists():
-                    shutil.copy2(src, data_dir / filename)
-                    self.app.display_info(f"Bundled (optional): {filename} (from {src})")
-                    break
-            else:
-                self.app.display_warning(
-                    f"Optional file not found: {filename} - microvm optimization disabled"
-                )
-
     def _find_qemu_install_dir(self, qemu_path: Path) -> Path:
         """Find the QEMU installation directory from a binary path."""
         system = platform.system().lower()
@@ -868,6 +846,8 @@ class RuntimeBuildHook(BuildHookInterface):
 
     # -----------------------------------------------------------------
     # QEMU installation
+    # NOTE: This logic is shared with quicksand_core.qemu.installer.
+    # Keep both in sync when updating installers or package names.
     # -----------------------------------------------------------------
 
     # Stefan Weil Windows installer — update URL when upgrading QEMU.

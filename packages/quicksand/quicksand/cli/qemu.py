@@ -1,4 +1,4 @@
-"""QEMU status command."""
+"""QEMU status and install commands."""
 
 from __future__ import annotations
 
@@ -8,13 +8,22 @@ import subprocess
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     """Register the qemu subcommand."""
-    subparsers.add_parser(
+    qemu_parser = subparsers.add_parser(
         "qemu",
-        help="Show QEMU installation info",
+        help="Show QEMU installation info or install QEMU",
     )
+    qemu_sub = qemu_parser.add_subparsers(dest="qemu_command")
+    qemu_sub.add_parser("install", help="Install QEMU via system package manager")
 
 
 def cmd(args: argparse.Namespace) -> int:
+    """Show QEMU installation info, or install QEMU."""
+    if getattr(args, "qemu_command", None) == "install":
+        return _cmd_install()
+    return _cmd_status()
+
+
+def _cmd_status() -> int:
     """Show QEMU installation info."""
     from quicksand_core.qemu.platform import get_runtime
 
@@ -53,3 +62,17 @@ def cmd(args: argparse.Namespace) -> int:
         pass
 
     return 0
+
+
+def _cmd_install() -> int:
+    """Install QEMU via system package manager."""
+    from quicksand_core.qemu.installer import install_qemu
+
+    try:
+        install_qemu()
+    except RuntimeError as e:
+        print(f"Failed to install QEMU: {e}")
+        return 1
+
+    print("QEMU installed successfully.")
+    return _cmd_status()

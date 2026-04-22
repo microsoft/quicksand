@@ -74,7 +74,6 @@ asyncio.run(main())
 - **Save and load**: Save VM disk state to a directory and load it on any machine
 - **File sharing**: CIFS mounts via `quicksand-smb` (pure-Python SMB3 server, invoked as a subprocess via QEMU guestfwd)
 - **Performance optimizations**:
-  - microvm machine type (~4x faster boot on Linux x86_64 + KVM)
   - io_uring disk AIO (~50% lower latency on Linux)
   - IOThreads for better concurrent disk I/O (all platforms)
 

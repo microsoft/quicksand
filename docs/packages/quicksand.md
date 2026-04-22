@@ -89,7 +89,7 @@ Each sandbox runs in a real virtual machine with hypervisor-level isolation:
 
 | Platform | Accelerator | Machine | File Sharing | Performance |
 |----------|-------------|---------|--------------|-------------|
-| Linux x86_64 | KVM | microvm | SMB/CIFS | io_uring + IOThreads |
+| Linux x86_64 | KVM | q35 | SMB/CIFS | io_uring + IOThreads |
 | Linux ARM64 | KVM | virt | SMB/CIFS | io_uring + IOThreads |
 | macOS | HVF | q35/virt | SMB/CIFS | IOThreads |
 | Windows | WHPX | q35 | SMB/CIFS | IOThreads |
@@ -99,7 +99,7 @@ Key components:
 - **Guest agent**: Lightweight TCP server for command execution
 - **Disposable overlays**: Base image unchanged, writes go to temp overlay
 - **SMB/CIFS mounts**: Mount host directories into the VM
-- **Platform optimizations**: microvm (~4x faster boot), io_uring (~50% lower disk latency), IOThreads
+- **Platform optimizations**: io_uring (~50% lower disk latency), IOThreads
 
 ## Requirements
 
