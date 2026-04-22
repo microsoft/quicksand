@@ -4,7 +4,6 @@ Provides PlatformConfig which composes architecture + OS configuration to produc
 QEMU command lines. Also provides runtime discovery (get_runtime, get_accelerator).
 
 Performance optimizations applied automatically:
-- microvm machine type: ~4x faster boot (Linux x86_64 + KVM only)
 - io_uring disk AIO: ~50% lower disk latency (Linux only)
 - IOThreads: Better concurrent disk I/O (all platforms)
 """
@@ -17,7 +16,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .._types import KernelParams, NetworkConstants, NetworkMode
-from ..host.arch import Architecture
 from ..host.os_ import (
     Accelerator,
     AcceleratorStatus,
@@ -116,34 +114,13 @@ class PlatformConfig:
     def disk_aio(self) -> str | None:
         return self.os.disk_aio
 
-    def _use_microvm(self, accelerator: Accelerator | None, data_dir: Path | None = None) -> bool:
-        if not (
-            self.os.supports_microvm
-            and self.arch.arch_type == Architecture.X86_64
-            and accelerator == Accelerator.KVM
-        ):
-            return False
-        return not (data_dir and not (data_dir / "bios-microvm.bin").exists())
-
-    def _get_effective_machine_type(
-        self, accelerator: Accelerator | None, data_dir: Path | None = None
-    ) -> MachineType:
-        if self._use_microvm(accelerator, data_dir):
-            return MachineType.MICROVM
+    def _get_effective_machine_type(self) -> MachineType:
         return self.arch.machine_type
 
-    def _get_virtio_blk_device(
-        self, accelerator: Accelerator | None, data_dir: Path | None = None
-    ) -> str:
-        if self._use_microvm(accelerator, data_dir):
-            return "virtio-blk-device"
+    def _get_virtio_blk_device(self) -> str:
         return self.arch.virtio_blk_device
 
-    def _get_virtio_net_device(
-        self, accelerator: Accelerator | None, data_dir: Path | None = None
-    ) -> str:
-        if self._use_microvm(accelerator, data_dir):
-            return "virtio-net-device"
+    def _get_virtio_net_device(self) -> str:
         return self.arch.virtio_net_device
 
     # =========================================================================
@@ -169,9 +146,8 @@ class PlatformConfig:
     ) -> list[str]:
         """Build the complete QEMU command line."""
         data_dir = runtime_info.data_dir
-        use_microvm = self._use_microvm(accelerator, data_dir)
-        effective_machine = self._get_effective_machine_type(accelerator, data_dir)
-        virtio_blk = self._get_virtio_blk_device(accelerator, data_dir)
+        effective_machine = self._get_effective_machine_type()
+        virtio_blk = self._get_virtio_blk_device()
 
         drive_opts = (
             f"file={overlay_path},format=qcow2,if=none,id=drive0,"
@@ -238,7 +214,7 @@ class PlatformConfig:
         else:
             cmd.extend(["-nographic", "-vga", "none"])
 
-        if not use_microvm:
+        if effective_machine != MachineType.VIRT:
             cmd.extend(["-global", "virtio-net-pci.romfile="])
 
         has_hw_accel = accelerator in (Accelerator.KVM, Accelerator.HVF)
@@ -254,17 +230,13 @@ class PlatformConfig:
             cmd.extend(["-qmp", f"tcp:127.0.0.1:{qmp_port},server,nowait"])
 
         if agent_socket_path is not None:
-            cmd.extend(self._build_virtio_serial_args(agent_socket_path, accelerator, data_dir))
+            cmd.extend(self._build_virtio_serial_args(agent_socket_path))
 
         cmd.extend(
             self._build_kernel_args(config, kernel_path, initrd_path, agent_port, agent_token)
         )
-        cmd.extend(
-            self._build_network_args(
-                config, agent_port, accelerator, data_dir, smb_port, smb_server
-            )
-        )
-        cmd.extend(self._build_9p_args(config, accelerator, data_dir))
+        cmd.extend(self._build_network_args(config, agent_port, smb_port, smb_server))
+        cmd.extend(self._build_9p_args(config))
         cmd.extend(config.extra_qemu_args)
 
         return cmd
@@ -302,12 +274,10 @@ class PlatformConfig:
     def _build_virtio_serial_args(
         self,
         socket_path: Path,
-        accelerator: Accelerator | None = None,
-        data_dir: Path | None = None,
     ) -> list[str]:
         """Build QEMU args for virtio-serial agent channel."""
-        use_microvm = self._use_microvm(accelerator, data_dir)
-        serial_device = "virtio-serial-device" if use_microvm else "virtio-serial-pci"
+        use_mmio = self.arch.machine_type == MachineType.VIRT
+        serial_device = "virtio-serial-device" if use_mmio else "virtio-serial-pci"
 
         return [
             "-device",
@@ -321,8 +291,6 @@ class PlatformConfig:
     def _build_9p_args(
         self,
         config: SandboxConfig,
-        accelerator: Accelerator | None = None,
-        data_dir: Path | None = None,
     ) -> list[str]:
         """Build QEMU args for virtio-9p (Plan 9) mounts.
 
@@ -334,9 +302,8 @@ class PlatformConfig:
         if not plan9_mounts:
             return []
 
-        use_microvm = self._use_microvm(accelerator, data_dir)
-        # MMIO machines (virt, microvm) use virtio-*-device; PCI machines (q35) use virtio-*-pci
-        use_mmio = use_microvm or self.arch.machine_type == MachineType.VIRT
+        # MMIO machines (virt/ARM64) use virtio-*-device; PCI machines (q35) use virtio-*-pci
+        use_mmio = self.arch.machine_type == MachineType.VIRT
         device_type = "virtio-9p-device" if use_mmio else "virtio-9p-pci"
 
         cmd: list[str] = []
@@ -357,16 +324,10 @@ class PlatformConfig:
         self,
         config: SandboxConfig,
         agent_port: int,
-        accelerator: Accelerator | None = None,
-        data_dir: Path | None = None,
         smb_port: int | None = None,
         smb_server: SMBServer | None = None,
     ) -> list[str]:
-        use_microvm = self._use_microvm(accelerator, data_dir)
-
         if config.network_mode is NetworkMode.NONE:
-            if use_microvm:
-                return []
             return ["-nic", "none"]
 
         hostfwd = f"hostfwd=tcp:127.0.0.1:{agent_port}-:{agent_port}"
@@ -385,11 +346,8 @@ class PlatformConfig:
 
         guestfwd_cmd = smb_server.get_guestfwd_cmd() if smb_server is not None else None
         if guestfwd_cmd is not None:
-            # QuicksandSMBServer: spawn the pure-Python SMB server directly.
-            # Works in both MOUNTS_ONLY and FULL modes — no TCP port needed.
             guestfwd = f",guestfwd=tcp:{guestfwd_ip}:{guestfwd_port}-cmd:{guestfwd_cmd}"
         elif config.network_mode is NetworkMode.MOUNTS_ONLY and smb_port is not None:
-            # SambaSMBServer fallback: relay to external smbd via TCP.
             import sys
 
             relay_script = str(Path(__file__).resolve().parent.parent / "_tcp_relay.py")
@@ -400,16 +358,8 @@ class PlatformConfig:
             )
 
         netdev_opts = f"user,id=net0,restrict={restrict},{hostfwd}{guestfwd}"
+        virtio_net = self._get_virtio_net_device()
 
-        if use_microvm:
-            return [
-                "-netdev",
-                netdev_opts,
-                "-device",
-                "virtio-net-device,netdev=net0",
-            ]
-
-        virtio_net = self._get_virtio_net_device(accelerator, data_dir)
         return [
             "-netdev",
             netdev_opts,
@@ -496,7 +446,8 @@ def get_runtime(config: PlatformConfig | None = None) -> RuntimeInfo:
     raise RuntimeError(
         "QEMU not found. Either:\n"
         "  - Install bundled: pip install quicksand-qemu\n"
-        "  - Or install system QEMU and ensure it's in PATH"
+        "  - Or install system QEMU and ensure it's in PATH\n"
+        "  - Or auto-install: quicksand.ensure_runtime()"
     )
 
 

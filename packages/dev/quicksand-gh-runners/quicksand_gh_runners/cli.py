@@ -14,8 +14,15 @@ from azure.mgmt.compute import ComputeManagementClient
 
 from . import config
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 
 def _get_compute_client() -> ComputeManagementClient:
+    if not config.SUBSCRIPTION_ID:
+        print("Error: AZURE_SUBSCRIPTION_ID is not set")
+        sys.exit(1)
     return ComputeManagementClient(DefaultAzureCredential(), config.SUBSCRIPTION_ID)
 
 
@@ -38,7 +45,6 @@ def _vm_power_state(client: ComputeManagementClient, vm_name: str) -> str:
 
 
 def _get_shutdown_time(vm_name: str) -> str | None:
-    """Get the auto-shutdown time for a VM from DevTestLab schedules."""
     result = subprocess.run(
         [
             "az",
@@ -66,6 +72,33 @@ def _get_shutdown_time(vm_name: str) -> str | None:
         display_hour = est_hour % 12 or 12
         return f"{display_hour}{period} EST"
     return None
+
+
+def _parse_time(time_str: str) -> str:
+    est = timezone(timedelta(hours=-5))
+
+    match = re.match(r"^(\d{1,2})(am|pm)$", time_str.lower())
+    if match:
+        hour = int(match.group(1))
+        if match.group(2) == "pm" and hour != 12:
+            hour += 12
+        elif match.group(2) == "am" and hour == 12:
+            hour = 0
+        est_dt = datetime.now(est).replace(hour=hour, minute=0, second=0)
+        utc_dt = est_dt.astimezone(UTC)
+        return f"{utc_dt.hour:02d}{utc_dt.minute:02d}"
+
+    match = re.match(r"^(\d{2}):?(\d{2})$", time_str)
+    if match:
+        return f"{match.group(1)}{match.group(2)}"
+
+    print(f"Cannot parse time: {time_str!r}. Use e.g. '10pm', '11pm', '22:00'")
+    sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
 
 
 def cmd_start(args: argparse.Namespace) -> None:
@@ -112,29 +145,6 @@ def cmd_status(args: argparse.Namespace) -> None:
             print(f"  {alias:6s} {vm_name:30s} error: {e}")
 
 
-def _parse_time(time_str: str) -> str:
-    """Parse a human time like '10pm', '11pm', '22:00' into HHMM UTC."""
-    est = timezone(timedelta(hours=-5))
-
-    match = re.match(r"^(\d{1,2})(am|pm)$", time_str.lower())
-    if match:
-        hour = int(match.group(1))
-        if match.group(2) == "pm" and hour != 12:
-            hour += 12
-        elif match.group(2) == "am" and hour == 12:
-            hour = 0
-        est_dt = datetime.now(est).replace(hour=hour, minute=0, second=0)
-        utc_dt = est_dt.astimezone(UTC)
-        return f"{utc_dt.hour:02d}{utc_dt.minute:02d}"
-
-    match = re.match(r"^(\d{2}):?(\d{2})$", time_str)
-    if match:
-        return f"{match.group(1)}{match.group(2)}"
-
-    print(f"Cannot parse time: {time_str!r}. Use e.g. '10pm', '11pm', '22:00'")
-    sys.exit(1)
-
-
 def cmd_extend(args: argparse.Namespace) -> None:
     runners = _resolve_runners(args.runner)
     utc_time = _parse_time(args.time) if args.time else "0300"  # default: 10pm EST
@@ -165,7 +175,10 @@ def cmd_feed_access(_args: argparse.Namespace) -> None:
     """Register the x64 runner's managed identity in Azure DevOps and grant feed access."""
     import requests
 
-    # 1. Get the managed identity principal ID from the x64 runner VM
+    if not config.ADO_ORG or not config.ADO_FEED:
+        print("Error: ADO_ORG and ADO_FEED env vars must be set")
+        sys.exit(1)
+
     client = _get_compute_client()
     vm = client.virtual_machines.get(config.RESOURCE_GROUP, config.RUNNERS["x64"])
     if not vm.identity or not vm.identity.principal_id:
@@ -174,23 +187,22 @@ def cmd_feed_access(_args: argparse.Namespace) -> None:
     principal_id = vm.identity.principal_id
     print(f"Managed identity principal ID: {principal_id}")
 
-    # 2. Get a bearer token for Azure DevOps
     credential = DefaultAzureCredential()
     token = credential.get_token(config.ADO_SCOPE).token
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # 3. Register as a service principal in the Azure DevOps org
     print(f"Registering service principal in {config.ADO_ORG}...")
     resp = requests.post(
-        f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/graph/serviceprincipals?api-version=7.1-preview.1",
+        f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/graph/serviceprincipals"
+        f"?api-version=7.1-preview.1",
         headers=headers,
         json={"originId": principal_id},
     )
     if resp.status_code == 409:
         print("  Already registered — fetching existing descriptor...")
-        # List service principals and find the one matching our principal ID
         list_resp = requests.get(
-            f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/graph/serviceprincipals?api-version=7.1-preview.1",
+            f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/graph/serviceprincipals"
+            f"?api-version=7.1-preview.1",
             headers=headers,
         )
         list_resp.raise_for_status()
@@ -206,10 +218,10 @@ def cmd_feed_access(_args: argparse.Namespace) -> None:
         descriptor = resp.json()["descriptor"]
     print(f"  Subject descriptor: {descriptor}")
 
-    # 4. Resolve subject descriptor to an identity descriptor (needed by feed permissions API)
     print("  Resolving identity descriptor...")
     resp = requests.get(
-        f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/identities?subjectDescriptors={descriptor}&api-version=7.1-preview.1",
+        f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/identities"
+        f"?subjectDescriptors={descriptor}&api-version=7.1-preview.1",
         headers=headers,
     )
     resp.raise_for_status()
@@ -220,11 +232,10 @@ def cmd_feed_access(_args: argparse.Namespace) -> None:
     identity_descriptor = identities[0]["descriptor"]
     print(f"  Identity descriptor: {identity_descriptor}")
 
-    # 5. Grant contributor access to the artifacts feed
-    # Role IDs: 1=reader, 2=collaborator, 3=contributor, 4=administrator
     print(f"Granting contributor access to feed '{config.ADO_FEED}'...")
     resp = requests.patch(
-        f"https://feeds.dev.azure.com/{config.ADO_ORG}/_apis/packaging/feeds/{config.ADO_FEED}/permissions?api-version=7.1-preview.1",
+        f"https://feeds.dev.azure.com/{config.ADO_ORG}/_apis/packaging/feeds/"
+        f"{config.ADO_FEED}/permissions?api-version=7.1-preview.1",
         headers=headers,
         json=[{"identityDescriptor": identity_descriptor, "role": 3}],
     )
@@ -312,8 +323,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog="quicksand-runners",
-        description="Manage self-hosted GitHub Actions runner VMs",
+        prog="runners",
+        description="Manage self-hosted GitHub Actions runner VMs on Azure",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -329,10 +340,15 @@ def main() -> int:
 
     p_extend = sub.add_parser("extend", help="Extend auto-shutdown time")
     p_extend.add_argument(
-        "time", nargs="?", help="New shutdown time, e.g. '10pm', '11pm' (default: 10pm EST)"
+        "time",
+        nargs="?",
+        help="New shutdown time, e.g. '10pm', '11pm' (default: 10pm EST)",
     )
     p_extend.add_argument(
-        "runner", nargs="?", choices=list(config.RUNNERS), help="Runner to target (default: all)"
+        "runner",
+        nargs="?",
+        choices=list(config.RUNNERS),
+        help="Runner to target (default: all)",
     )
     p_extend.set_defaults(func=cmd_extend)
 
@@ -341,7 +357,8 @@ def main() -> int:
     p_setup.set_defaults(func=cmd_setup)
 
     p_feed = sub.add_parser(
-        "feed-access", help="Grant runner managed identity access to Azure Artifacts feed"
+        "feed-access",
+        help="Grant runner managed identity access to Azure Artifacts feed",
     )
     p_feed.set_defaults(func=cmd_feed_access)
 

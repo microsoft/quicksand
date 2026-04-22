@@ -4,7 +4,7 @@ This module provides OS-specific values (accelerator, paths, kernel params, etc.
 through a class hierarchy. Each OS has its own subclass.
 
 OS-specific features:
-- Linux: KVM acceleration, io_uring disk AIO, microvm support
+- Linux: KVM acceleration, io_uring disk AIO
 - macOS: HVF acceleration
 - Windows: WHPX acceleration, noapic kernel param
 """
@@ -107,15 +107,6 @@ class BaseOSConfig(ABC):
         """
         ...
 
-    @property
-    @abstractmethod
-    def supports_microvm(self) -> bool:
-        """Whether this OS supports the microvm machine type.
-
-        microvm provides ~4x faster boot but requires KVM (Linux only).
-        """
-        ...
-
     @abstractmethod
     def detect_accelerator(self) -> AcceleratorStatus:
         """Detect if hardware acceleration is available."""
@@ -161,11 +152,6 @@ class LinuxConfig(BaseOSConfig):
     def disk_aio(self) -> str | None:
         # io_uring provides ~50% lower disk latency on Linux (kernel 5.8+)
         return "io_uring"
-
-    @property
-    def supports_microvm(self) -> bool:
-        # microvm is a Linux-only machine type that provides ~4x faster boot
-        return True
 
     def detect_accelerator(self) -> AcceleratorStatus:
         """Detect KVM on Linux."""
@@ -226,11 +212,6 @@ class DarwinConfig(BaseOSConfig):
     def disk_aio(self) -> str | None:
         # io_uring is Linux-only; macOS uses QEMU's default (threads)
         return None
-
-    @property
-    def supports_microvm(self) -> bool:
-        # microvm requires KVM (Linux only)
-        return False
 
     def detect_accelerator(self) -> AcceleratorStatus:
         """Detect Hypervisor.framework on macOS."""
@@ -300,11 +281,6 @@ class WindowsConfig(BaseOSConfig):
     def disk_aio(self) -> str | None:
         # io_uring is Linux-only; Windows uses QEMU's default
         return None
-
-    @property
-    def supports_microvm(self) -> bool:
-        # microvm requires KVM (Linux only)
-        return False
 
     def detect_accelerator(self) -> AcceleratorStatus:
         """Detect Windows Hypervisor Platform."""
@@ -423,10 +399,6 @@ class OSConfig(BaseOSConfig):
 
     @property
     def disk_aio(self) -> str | None:
-        raise NotImplementedError
-
-    @property
-    def supports_microvm(self) -> bool:
         raise NotImplementedError
 
     def detect_accelerator(self) -> AcceleratorStatus:

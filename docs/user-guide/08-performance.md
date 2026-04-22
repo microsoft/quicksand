@@ -15,7 +15,7 @@ Measured with `quicksand benchmark -n 5` on macOS ARM64 (Apple M3 Max, HVF):
 | `aif-agent-sandbox` | 0.91s | 0.92s |
 | `aif-cua-agent-sandbox` | 0.85s | 1.01s |
 
-Boot time is measured from `start()` to sandbox ready (agent connected, mounts configured). The two biggest factors are the machine type (microvm is ~4x faster on Linux) and hardware acceleration (TCG is 10-50x slower).
+Boot time is measured from `start()` to sandbox ready (agent connected, mounts configured). The biggest factor is hardware acceleration (TCG is 10-50x slower).
 
 ## CPU performance
 
@@ -65,11 +65,11 @@ Plus ~50-100MB of overhead for the QEMU process itself. Multiple sandboxes run c
 
 | | Linux + KVM | macOS + HVF | Windows + WHPX | Any + TCG |
 |---|---|---|---|---|
-| Boot (Alpine) | < 0.2s (microvm) | 0.37s | ~1-2s | ~10-30s |
-| Boot (Ubuntu) | < 0.5s (microvm) | 0.88s | ~2-3s | ~10-30s |
+| Boot (Alpine) | < 0.5s | 0.37s | ~1-2s | ~10-30s |
+| Boot (Ubuntu) | < 1s | 0.88s | ~2-3s | ~10-30s |
 | CPU performance | Near-native | Near-native | Near-native | 10-50x slower |
 | Disk AIO | io_uring | threads | threads | threads |
-| Machine type | microvm | Q35/VIRT | Q35 | Q35/VIRT |
+| Machine type | Q35/VIRT | Q35/VIRT | Q35 | Q35/VIRT |
 
 ## Tips
 

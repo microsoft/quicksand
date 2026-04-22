@@ -12,6 +12,30 @@ For first-time setup, scaffold the workflow with `uvr workflow init` (see `refer
 
 If the project has existing CI checks (tests, linting, etc.) that aren't yet wired into the release workflow, see `references/custom-jobs.md` before your first release.
 
+## 0. Self-hosted runner
+
+The arm64 macOS builds require a self-hosted runner. Before dispatching, start the runner agent in a background shell:
+
+```bash
+rm -rf gha-runners/local/_diag gha-runners/local/_work
+gha-runners/local/run.sh
+```
+
+Clean stale diagnostic logs and work dirs first (they cause "file already exists" errors). The runner is a long-running process — do NOT run it in a loop. Start it once in a background shell and it will pick up jobs as they arrive.
+
+**Troubleshooting:**
+- **"A session for this runner already exists"**: Another runner process is already running. Kill it first: `pkill -f Runner.Listener` then retry.
+- **"file already exists" error in Set up job**: Stale `_diag/` files from a previous run. Clean with `rm -rf gha-runners/local/_diag`.
+- **NEVER start multiple runner processes.** Each `run.sh` invocation creates a persistent process. Check with `ps aux | grep Runner.Listener` before starting a new one.
+
+Also start the cloud runners if they were shut down by auto-shutdown:
+
+```bash
+az vm start --resource-group rg-quicksand-runners --name quicksand-runner-x64 --no-wait
+az vm start --resource-group rg-quicksand-runners --name quicksand-runner-arm64 --no-wait
+az vm start --resource-group rg-quicksand-runners --name quicksand-runner-win --no-wait
+```
+
 ## 1. Branch
 
 You must not be on main. If you are, create a release branch and switch to it.

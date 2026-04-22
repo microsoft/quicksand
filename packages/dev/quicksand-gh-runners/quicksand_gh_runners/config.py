@@ -1,6 +1,8 @@
 """Azure configuration for runner VMs."""
 
-SUBSCRIPTION_ID = "d4fe558f-6660-4fe7-99ec-ae4716b5e03f"  # MSR LIT
+import os
+
+SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
 RESOURCE_GROUP = "rg-quicksand-runners"
 LOCATION = "eastus"
 
@@ -14,6 +16,6 @@ DEFAULT_SHUTDOWN_TIME = "0200"  # 9pm EST = 02:00 UTC
 SHUTDOWN_TIMEZONE = "UTC"
 
 # Azure DevOps
-ADO_ORG = "msraif"
-ADO_FEED = "packages"
+ADO_ORG = os.environ.get("ADO_ORG", "")
+ADO_FEED = os.environ.get("ADO_FEED", "")
 ADO_SCOPE = "499b84ac-1321-427f-aa17-267ca6975798/.default"

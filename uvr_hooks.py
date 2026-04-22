@@ -14,8 +14,8 @@ from uv_release_monorepo.shared.models import BuildStage, ReleasePlan
 # x64 images are built natively on Linux; arm64 images are built on
 # macOS because the Linux arm64 runners lack KVM for overlay builds.
 RETAG_RUNNERS: list[list[str]] = [
-    ["ubuntu-latest"],
-    ["macos-latest"],
+    ["self-hosted", "linux", "x64"],
+    ["self-hosted", "macos", "arm64"],
 ]
 
 _WHEEL_RE = re.compile(
@@ -115,7 +115,8 @@ class Hook(ReleaseHook):
                 f" --clobber || true"
             )
         install_lines.append(
-            "uv pip install --reinstall --find-links dist/ quicksand quicksand-ubuntu quicksand-alpine"
+            "uv pip install --reinstall --find-links dist/"
+            " dist/quicksand-*.whl quicksand-ubuntu quicksand-alpine"
         )
         install = "\n".join(install_lines)
         plan.test_install = {  # ty: ignore[unresolved-attribute]

@@ -128,6 +128,8 @@ jobs:
         pattern: wheels-*
         path: dist/
         merge-multiple: true
+        run-id: ${{ fromJSON(inputs.plan).reuse_run_id != '' && fromJSON(inputs.plan).reuse_run_id || github.run_id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: KVM setup
       run: |

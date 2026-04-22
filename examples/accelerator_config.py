@@ -8,7 +8,6 @@ By default, quicksand auto-detects the best accelerator:
 Falls back to TCG (software emulation) when hardware accel unavailable.
 
 Performance optimizations are applied automatically based on platform:
-- Linux x86_64 + KVM: Uses 'microvm' machine type (~4x faster boot)
 - Linux: Uses io_uring for disk I/O (~50% lower latency)
 - All platforms: Uses IOThreads for better concurrent disk I/O
 """

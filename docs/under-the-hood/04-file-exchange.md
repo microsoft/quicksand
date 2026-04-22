@@ -65,7 +65,7 @@ Sandbox(
 | `-device virtio-9p-pci,...` | Attach the filesystem as a virtio device the guest can mount |
 | `mount_tag=pb9p0` | Tag used by the guest `mount -t 9p pb9p0 /mnt/data` command |
 
-On MMIO machines such as `microvm` (x86_64+KVM) and `virt` (ARM64), the device type is `virtio-9p-device` instead of `virtio-9p-pci`.
+On MMIO machines such as `virt` (ARM64), the device type is `virtio-9p-device` instead of `virtio-9p-pci`.
 
 Read-only 9p mounts add `,readonly=on` to the `-fsdev` flags.
 

@@ -18,8 +18,8 @@ from ._types import (
     MountHandle,
     MountType,
     NetworkMode,
-    QuicksandGuestAgentMethod,
     PortForward,
+    QuicksandGuestAgentMethod,
     ResolvedImage,
     SaveManifest,
 )
@@ -41,6 +41,7 @@ from .qemu.arch import (
     MachineType,
     X86_64Config,
 )
+from .qemu.installer import ensure_runtime, install_qemu
 from .qemu.platform import (
     PlatformConfig,
     RuntimeInfo,
@@ -74,6 +75,8 @@ __all__ = [  # noqa: RUF022
     "RuntimeInfo",
     "is_runtime_available",
     "get_machine_type",
+    "ensure_runtime",
+    "install_qemu",
     # Accelerator
     "get_accelerator",
     "detect_accelerator",

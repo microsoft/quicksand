@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-qemu"
-version = "0.4.8"
+version = "0.4.9.dev0"
 description = "Bundled QEMU binaries for the quicksand VM harness."
 readme = "README.md"
 requires-python = ">=3.11"
