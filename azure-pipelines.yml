@@ -1,0 +1,21 @@
+# azure-pipelines.yml
+
+trigger:
+  branches: { include: ["main"] }
+pr: none
+
+pool:
+  vmImage: 'windows-latest'   # Microsoft-hosted Windows image
+
+steps:
+  - checkout: self
+  - task: PoliCheck@2
+    inputs:
+      targetType: 'F'
+      targetArgument: '$(Build.SourcesDirectory)'
+      
+  - task: PostAnalysis@2
+    inputs:
+      GdnBreakAllTools: false
+      GdnBreakGdnToolPoliCheck: true
+      GdnBreakGdnToolPoliCheckSeverity: 'Warning'
