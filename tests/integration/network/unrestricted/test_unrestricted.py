@@ -49,7 +49,12 @@ class TestUnrestrictedNetwork:
         result = await shared_sandbox.execute("getent hosts google.com", timeout=10.0)
         # getent should succeed if DNS is working
         assert result.exit_code == 0, f"DNS resolution failed: {result.stderr}"
-        assert "google.com" in result.stdout, "Expected hostname in getent output"
+
+        # Parse getent output and require google.com as a hostname token,
+        # not merely a substring at an arbitrary position.
+        lines = [line.split() for line in result.stdout.splitlines() if line.strip()]
+        has_google_host = any(len(fields) >= 2 and "google.com" in fields[1:] for fields in lines)
+        assert has_google_host, "Expected google.com hostname token in getent output"
 
     @pytest.mark.asyncio
     async def test_curl_https(self, shared_sandbox):
