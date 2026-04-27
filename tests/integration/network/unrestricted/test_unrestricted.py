@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -49,7 +50,23 @@ class TestUnrestrictedNetwork:
         result = await shared_sandbox.execute("getent hosts google.com", timeout=10.0)
         # getent should succeed if DNS is working
         assert result.exit_code == 0, f"DNS resolution failed: {result.stderr}"
-        assert "google.com" in result.stdout, "Expected hostname in getent output"
+
+        # Parse getent output and require google.com (or subdomain) as a
+        # hostname token with proper host-boundary validation.
+        lines = [line.split() for line in result.stdout.splitlines() if line.strip()]
+        has_google_host = False
+        for fields in lines:
+            if len(fields) < 2:
+                continue
+            for token in fields[1:]:
+                normalized = token.rstrip(".").lower()
+                host = urlsplit(f"//{normalized}").hostname
+                if host and (host == "google.com" or host.endswith(".google.com")):
+                    has_google_host = True
+                    break
+            if has_google_host:
+                break
+        assert has_google_host, "Expected google.com hostname token in getent output"
 
     @pytest.mark.asyncio
     async def test_curl_https(self, shared_sandbox):
