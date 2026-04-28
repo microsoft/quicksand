@@ -170,17 +170,12 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ fromJSON(inputs.plan).python_version }}
-    - id: download
-      name: Download wheels
+    - id: release
+      name: Download wheels, tag and publish releases
       env:
         GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
-      run: uv run uvr jobs download
-    - id: publish
-      name: Tag and publish releases
-      env:
-        GH_TOKEN: ${{ github.token }}
-        UVR_PLAN: ${{ inputs.plan }}
+        RUN_ID: ${{ github.run_id }}
       run: uv run uvr jobs release
 
   # --------------------------------------------------------------------------
