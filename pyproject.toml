@@ -67,7 +67,7 @@ dev = [
     "twine",
     "keyring",
     "keyrings.artifacts",
-    "uv-release==0.28.1",
+    "uv-release==0.30.0",
 ]
 
 [tool.poe.tasks]

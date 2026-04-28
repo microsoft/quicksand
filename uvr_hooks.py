@@ -117,9 +117,9 @@ class Hooks(ReleaseHook):
             " dist/quicksand-*.whl quicksand-ubuntu quicksand-alpine"
         )
         install = "\n".join(install_lines)
-        plan.test_install = {  # ty: ignore[unresolved-attribute]
-            vm: install for vm in ("ubuntu", "alpine")
-        }
+        plan = plan.model_copy(
+            update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
+        )
 
         return plan
 
