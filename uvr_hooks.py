@@ -7,8 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from uv_release_monorepo.shared.hooks import ReleaseHook
-from uv_release_monorepo.shared.models import BuildStage, ReleasePlan
+from uv_release.types import Hooks as ReleaseHook, Plan
 
 # Canonical runner per architecture — retag only runs on these.
 # x64 images are built natively on Linux; arm64 images are built on
@@ -83,10 +82,10 @@ def _latest_release_tag(pkg: str) -> str | None:
     return None
 
 
-class Hook(ReleaseHook):
-    def post_plan(self, plan: ReleasePlan) -> ReleasePlan:
-        """Skip jobs whose packages didn't change, and serialize build stages."""
-        changed = plan.changed.keys()
+class Hooks(ReleaseHook):
+    def post_plan(self, workspace, intent, plan: Plan) -> Plan:
+        """Skip jobs whose packages didn't change."""
+        changed = {c.package.name for c in plan.changes}
         if "test" not in plan.skip and not (changed & _TEST_PACKAGES):
             plan.skip.append("test")
         if "verify-licenses" not in plan.skip and "quicksand-qemu" not in changed:
@@ -95,7 +94,6 @@ class Hook(ReleaseHook):
         # Inject per-VM test install commands into the plan.
         # The workflow downloads built wheels into dist/ via download-artifact.
         # For unchanged packages we fetch their latest release wheels too.
-        changed = plan.changed.keys()
         install_lines = [
             "uv venv --seed",
             "uv pip install --reinstall pytest pytest-timeout pytest-asyncio",
@@ -123,32 +121,9 @@ class Hook(ReleaseHook):
             vm: install for vm in ("ubuntu", "alpine")
         }
 
-        # Serialize build stages: split multi-package stages into one stage
-        # per package so only one VM runs at a time per runner, preventing
-        # host disk exhaustion from concurrent overlay builds.
-        for runner_key, stages in plan.build_commands.items():
-            serialized: list[BuildStage] = []
-            for stage in stages:
-                if len(stage.packages) <= 1:
-                    serialized.append(stage)
-                    continue
-                first = True
-                for pkg_name, cmds in stage.packages.items():
-                    serialized.append(
-                        BuildStage(
-                            setup=stage.setup if first else [],
-                            packages={pkg_name: cmds},
-                            cleanup=[],
-                        )
-                    )
-                    first = False
-                if stage.cleanup and serialized:
-                    serialized[-1].cleanup = stage.cleanup
-            plan.build_commands[runner_key] = serialized
-
         return plan
 
-    def pre_build(self, plan: ReleasePlan, runner: list[str] | None = None) -> None:
+    def pre_build(self) -> None:
         """Install gh CLI on Windows runners (not pre-installed on self-hosted)."""
         import os
         import platform
@@ -172,7 +147,6 @@ class Hook(ReleaseHook):
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(gh_dir)
             zip_path.unlink(missing_ok=True)
-            # Find the bin directory inside the extracted archive
             for candidate in gh_dir.rglob("gh.exe"):
                 os.environ["PATH"] = str(candidate.parent) + os.pathsep + os.environ.get("PATH", "")
                 print(f"Installed gh CLI: {candidate}")
@@ -182,8 +156,15 @@ class Hook(ReleaseHook):
             print(f"Warning: failed to install gh CLI: {e}")
             print("Build may fail if dependency wheels need to be fetched")
 
-    def post_build(self, plan: ReleasePlan, runner: list[str] | None = None) -> None:
-        if runner is None or runner not in RETAG_RUNNERS:
+    def post_build(self) -> None:
+        import json
+        import os
+
+        runner_json = os.environ.get("UVR_RUNNER")
+        if not runner_json:
+            return
+        runner = json.loads(runner_json)
+        if runner not in RETAG_RUNNERS:
             return
         print(f"Retagging wheels for cross-platform (runner: {runner})")
         _retag_wheels(Path("dist"))
