@@ -122,78 +122,41 @@ class Hooks(ReleaseHook):
             update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
         )
 
-        # Wire the build pre-hook to extract base images from dep wheels.
+        # Wire the build pre-hook to ensure gh CLI is available.
         new_jobs = []
         for job in plan.jobs:
             if job.name == "build" and not job.pre_hook:
-                job = job.model_copy(update={"pre_hook": "extract_dep_images"})
+                job = job.model_copy(update={"pre_hook": "ensure_gh"})
             new_jobs.append(job)
         plan = plan.model_copy(update={"jobs": new_jobs})
 
         return plan
 
-    def extract_dep_images(self) -> None:
-        """Extract base images from dep wheels into workspace source dirs.
-
-        When building overlays via --packages (base images not rebuilt), uv
-        resolves build-system deps from workspace sources which lack qcow2
-        images.  Extracting them and clearing the uv cache ensures the
-        build env gets images.
-
-        Also ensures gh CLI is available (needed for dep downloads).
-        """
+    def ensure_gh(self) -> None:
+        """Ensure gh CLI is available (not pre-installed on all runners)."""
         import platform
-        import zipfile
 
-        # Ensure gh CLI is available (not pre-installed on all runners)
-        if not shutil.which("gh"):
-            system = platform.system().lower()
-            if system == "linux":
-                print("Installing gh CLI...")
-                install_cmd = (
-                    "curl -fsSL https://cli.github.com/packages/"
-                    "githubcli-archive-keyring.gpg"
-                    " | sudo dd of=/usr/share/keyrings/"
-                    "githubcli-archive-keyring.gpg"
-                    " && echo 'deb [arch=amd64 signed-by="
-                    "/usr/share/keyrings/githubcli-archive-keyring.gpg]"
-                    " https://cli.github.com/packages stable main'"
-                    " | sudo tee /etc/apt/sources.list.d/github-cli.list"
-                    " > /dev/null"
-                    " && sudo apt-get update -qq"
-                    " && sudo apt-get install -y -qq gh"
-                )
-                subprocess.run(["bash", "-c", install_cmd], check=True)
-            elif system == "windows":
-                self._install_gh_windows()
-
-        deps_dir = Path("deps")
-        if not deps_dir.exists():
+        if shutil.which("gh"):
             return
-
-        for whl in sorted(deps_dir.glob("*.whl")):
-            with zipfile.ZipFile(whl) as zf:
-                for name in zf.namelist():
-                    if not any(name.endswith(ext) for ext in (".qcow2", ".kernel", ".initrd")):
-                        continue
-                    parts = Path(name).parts
-                    if len(parts) < 2:
-                        continue
-                    pkg_name = parts[0].replace("_", "-")
-                    dest = Path("packages") / pkg_name / name
-                    if dest.exists():
-                        continue
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    print(f"  Extracting {name} from {whl.name}")
-                    with zf.open(name) as src, open(dest, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
-
-        # Always clean cached workspace builds so uv rebuilds them with
-        # the extracted images and correct platform binaries.
-        subprocess.run(
-            ["uv", "cache", "clean", "quicksand-ubuntu", "quicksand-alpine", "quicksand-qemu"],
-            check=False,
-        )
+        system = platform.system().lower()
+        if system == "linux":
+            print("Installing gh CLI...")
+            install_cmd = (
+                "curl -fsSL https://cli.github.com/packages/"
+                "githubcli-archive-keyring.gpg"
+                " | sudo dd of=/usr/share/keyrings/"
+                "githubcli-archive-keyring.gpg"
+                " && echo 'deb [arch=amd64 signed-by="
+                "/usr/share/keyrings/githubcli-archive-keyring.gpg]"
+                " https://cli.github.com/packages stable main'"
+                " | sudo tee /etc/apt/sources.list.d/github-cli.list"
+                " > /dev/null"
+                " && sudo apt-get update -qq"
+                " && sudo apt-get install -y -qq gh"
+            )
+            subprocess.run(["bash", "-c", install_cmd], check=True)
+        elif system == "windows":
+            self._install_gh_windows()
 
     def _install_gh_windows(self) -> None:
         """Install gh CLI on Windows via zip download."""
