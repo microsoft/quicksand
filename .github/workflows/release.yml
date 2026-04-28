@@ -58,7 +58,7 @@ jobs:
   uvr-build:
     needs: [uvr-validate, check]
     runs-on: ${{ matrix.runner }}
-    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-build') }}
+    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'build') }}
     timeout-minutes: 60
     strategy:
       fail-fast: true
@@ -160,7 +160,7 @@ jobs:
     needs: [uvr-build, verify-licenses, test]
     runs-on: ubuntu-latest
     environment: release
-    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-release') }}
+    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'release') }}
     steps:
     - id: checkout
       uses: actions/checkout@v6
@@ -215,7 +215,7 @@ jobs:
   uvr-bump:
     runs-on: ubuntu-latest
     environment: release
-    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-bump') }}
+    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'bump') }}
     needs:
     - uvr-release
     steps:
