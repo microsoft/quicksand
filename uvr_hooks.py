@@ -7,7 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from uv_release.types import Hooks as ReleaseHook, Plan
+from uv_release.types import Hooks as ReleaseHook
+from uv_release.types import Plan
 
 # Canonical runner per architecture — retag only runs on these.
 # x64 images are built natively on Linux; arm64 images are built on
