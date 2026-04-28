@@ -139,8 +139,33 @@ class Hooks(ReleaseHook):
         resolves build-system deps from workspace sources which lack qcow2
         images.  Extracting them and clearing the uv cache ensures the
         build env gets images.
+
+        Also ensures gh CLI is available (needed for dep downloads).
         """
+        import platform
         import zipfile
+
+        # Ensure gh CLI is available (not pre-installed on all runners)
+        if not shutil.which("gh"):
+            system = platform.system().lower()
+            if system == "linux":
+                print("Installing gh CLI...")
+                install_cmd = (
+                    "curl -fsSL https://cli.github.com/packages/"
+                    "githubcli-archive-keyring.gpg"
+                    " | sudo dd of=/usr/share/keyrings/"
+                    "githubcli-archive-keyring.gpg"
+                    " && echo 'deb [arch=amd64 signed-by="
+                    "/usr/share/keyrings/githubcli-archive-keyring.gpg]"
+                    " https://cli.github.com/packages stable main'"
+                    " | sudo tee /etc/apt/sources.list.d/github-cli.list"
+                    " > /dev/null"
+                    " && sudo apt-get update -qq"
+                    " && sudo apt-get install -y -qq gh"
+                )
+                subprocess.run(["bash", "-c", install_cmd], check=True)
+            elif system == "windows":
+                self._install_gh_windows()
 
         deps_dir = Path("deps")
         if not deps_dir.exists():
@@ -170,16 +195,12 @@ class Hooks(ReleaseHook):
             check=False,
         )
 
-    def pre_build(self) -> None:
-        """Install gh CLI on Windows runners (not pre-installed on self-hosted)."""
+    def _install_gh_windows(self) -> None:
+        """Install gh CLI on Windows via zip download."""
         import os
         import platform
         import urllib.request
-
-        if platform.system() != "Windows":
-            return
-        if shutil.which("gh"):
-            return
+        import zipfile
 
         print("Installing gh CLI for Windows...")
         machine = platform.machine().lower()
@@ -189,8 +210,6 @@ class Hooks(ReleaseHook):
         gh_dir = Path("gh_cli")
         try:
             urllib.request.urlretrieve(url, zip_path)
-            import zipfile
-
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(gh_dir)
             zip_path.unlink(missing_ok=True)
@@ -201,7 +220,9 @@ class Hooks(ReleaseHook):
             print("Warning: gh.exe not found in zip archive")
         except Exception as e:
             print(f"Warning: failed to install gh CLI: {e}")
-            print("Build may fail if dependency wheels need to be fetched")
+
+    def pre_build(self) -> None:
+        """No-op — gh install and image extraction handled by extract_dep_images."""
 
     def post_build(self) -> None:
         import json
