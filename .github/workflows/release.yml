@@ -170,6 +170,10 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ fromJSON(inputs.plan).python_version }}
+    - name: Configure git identity
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
     - id: release
       name: Download wheels, tag and publish releases
       env:
@@ -223,6 +227,10 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ fromJSON(inputs.plan).python_version }}
+    - name: Configure git identity
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
     - id: finalize
       name: Finalize release
       env:
