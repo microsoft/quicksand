@@ -128,7 +128,7 @@ class Hooks(ReleaseHook):
         # from workspace sources which lack qcow2 images.  Extracting them
         # first and clearing the uv cache ensures the build env gets images.
         _EXTRACT_SCRIPT = (
-            "python3 -c \""
+            'python3 -c "'
             "import zipfile, pathlib, shutil, os\\n"
             "deps = pathlib.Path('deps')\\n"
             "if deps.exists():\\n"
@@ -146,7 +146,7 @@ class Hooks(ReleaseHook):
             "        print(f'  Extracting {name} from {whl.name}')\\n"
             "        with zf.open(name) as s, open(dest,'wb') as d:\\n"
             "          shutil.copyfileobj(s,d)\\n"
-            "\""
+            '"'
             " && uv cache clean quicksand-ubuntu quicksand-alpine || true"
         )
         new_jobs = []
