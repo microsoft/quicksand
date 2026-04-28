@@ -146,7 +146,6 @@ class Hooks(ReleaseHook):
         if not deps_dir.exists():
             return
 
-        extracted = False
         for whl in sorted(deps_dir.glob("*.whl")):
             with zipfile.ZipFile(whl) as zf:
                 for name in zf.namelist():
@@ -163,13 +162,13 @@ class Hooks(ReleaseHook):
                     print(f"  Extracting {name} from {whl.name}")
                     with zf.open(name) as src, open(dest, "wb") as dst:
                         shutil.copyfileobj(src, dst)
-                    extracted = True
 
-        if extracted:
-            subprocess.run(
-                ["uv", "cache", "clean", "quicksand-ubuntu", "quicksand-alpine"],
-                check=False,
-            )
+        # Always clean cached workspace builds so uv rebuilds them with
+        # the extracted images and correct platform binaries.
+        subprocess.run(
+            ["uv", "cache", "clean", "quicksand-ubuntu", "quicksand-alpine", "quicksand-qemu"],
+            check=False,
+        )
 
     def pre_build(self) -> None:
         """Install gh CLI on Windows runners (not pre-installed on self-hosted)."""

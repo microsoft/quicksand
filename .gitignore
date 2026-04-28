@@ -40,6 +40,9 @@ manifest.json
 # Local scripts
 scripts/rewrite-history.sh
 
+# Environment
+.env
+
 # Temp files
 *.tmp
 *.log
