@@ -122,11 +122,34 @@ class Hooks(ReleaseHook):
             update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
         )
 
-        # Wire the build pre-hook to ensure gh CLI is available.
+        # Wire the build pre-hook to ensure gh CLI is available, and
+        # inject a platform-filter command after dep downloads.  uv
+        # incorrectly picks linux_aarch64 over macosx_arm64 from find-links
+        # when both are present, so we remove non-native wheels after download.
+        from uv_release.commands import ShellCommand
+
         new_jobs = []
         for job in plan.jobs:
-            if job.name == "build" and not job.pre_hook:
-                job = job.model_copy(update={"pre_hook": "ensure_gh"})
+            if job.name == "build":
+                if not job.pre_hook:
+                    job = job.model_copy(update={"pre_hook": "ensure_gh"})
+                # Insert platform filter after download_wheels
+                new_cmds = []
+                for cmd in job.commands:
+                    new_cmds.append(cmd)
+                    if getattr(cmd, "type", None) == "download_wheels":
+                        new_cmds.append(
+                            ShellCommand(
+                                label="Remove non-native wheels from deps",
+                                check=False,
+                                args=[
+                                    "python3",
+                                    "scripts/ci/filter_deps_platform.py",
+                                    "deps",
+                                ],
+                            )
+                        )
+                job = job.model_copy(update={"commands": new_cmds})
             new_jobs.append(job)
         plan = plan.model_copy(update={"jobs": new_jobs})
 
