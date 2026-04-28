@@ -122,41 +122,54 @@ class Hooks(ReleaseHook):
             update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
         )
 
-        # Inject a pre-hook on the build job to extract base images from dep
-        # wheels into workspace source dirs.  When building overlays via
-        # --packages (base images not rebuilt), uv resolves build-system deps
-        # from workspace sources which lack qcow2 images.  Extracting them
-        # first and clearing the uv cache ensures the build env gets images.
-        _EXTRACT_SCRIPT = (
-            'python3 -c "'
-            "import zipfile, pathlib, shutil, os\\n"
-            "deps = pathlib.Path('deps')\\n"
-            "if deps.exists():\\n"
-            "  for whl in sorted(deps.glob('*.whl')):\\n"
-            "    with zipfile.ZipFile(whl) as zf:\\n"
-            "      for name in zf.namelist():\\n"
-            "        exts=('.qcow2','.kernel','.initrd')\\n"
-            "        if not any(name.endswith(e) for e in exts): continue\\n"
-            "        parts = pathlib.Path(name).parts\\n"
-            "        if len(parts) < 2: continue\\n"
-            "        pkg = parts[0].replace('_','-')\\n"
-            "        dest = pathlib.Path('packages') / pkg / name\\n"
-            "        if dest.exists(): continue\\n"
-            "        dest.parent.mkdir(parents=True, exist_ok=True)\\n"
-            "        print(f'  Extracting {name} from {whl.name}')\\n"
-            "        with zf.open(name) as s, open(dest,'wb') as d:\\n"
-            "          shutil.copyfileobj(s,d)\\n"
-            '"'
-            " && uv cache clean quicksand-ubuntu quicksand-alpine || true"
-        )
+        # Wire the build pre-hook to extract base images from dep wheels.
         new_jobs = []
         for job in plan.jobs:
             if job.name == "build" and not job.pre_hook:
-                job = job.model_copy(update={"pre_hook": _EXTRACT_SCRIPT})
+                job = job.model_copy(update={"pre_hook": "extract_dep_images"})
             new_jobs.append(job)
         plan = plan.model_copy(update={"jobs": new_jobs})
 
         return plan
+
+    def extract_dep_images(self) -> None:
+        """Extract base images from dep wheels into workspace source dirs.
+
+        When building overlays via --packages (base images not rebuilt), uv
+        resolves build-system deps from workspace sources which lack qcow2
+        images.  Extracting them and clearing the uv cache ensures the
+        build env gets images.
+        """
+        import zipfile
+
+        deps_dir = Path("deps")
+        if not deps_dir.exists():
+            return
+
+        extracted = False
+        for whl in sorted(deps_dir.glob("*.whl")):
+            with zipfile.ZipFile(whl) as zf:
+                for name in zf.namelist():
+                    if not any(name.endswith(ext) for ext in (".qcow2", ".kernel", ".initrd")):
+                        continue
+                    parts = Path(name).parts
+                    if len(parts) < 2:
+                        continue
+                    pkg_name = parts[0].replace("_", "-")
+                    dest = Path("packages") / pkg_name / name
+                    if dest.exists():
+                        continue
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    print(f"  Extracting {name} from {whl.name}")
+                    with zf.open(name) as src, open(dest, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                    extracted = True
+
+        if extracted:
+            subprocess.run(
+                ["uv", "cache", "clean", "quicksand-ubuntu", "quicksand-alpine"],
+                check=False,
+            )
 
     def pre_build(self) -> None:
         """Install gh CLI on Windows runners (not pre-installed on self-hosted)."""
