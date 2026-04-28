@@ -35,7 +35,7 @@ dev = [
     { name = "ruff" },
     { name = "twine" },
     { name = "ty" },
-    { name = "uv-release", specifier = "==0.30.0" },
+    { name = "uv-release", specifier = "==0.30.2a0" },
 ]
 
 [[package]]
@@ -1510,7 +1510,7 @@ wheels = [
 
 [[package]]
 name = "uv-release"
-version = "0.30.0"
+version = "0.30.2a0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "diny" },
@@ -1521,7 +1521,7 @@ dependencies = [
     { name = "tomlkit" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d5/ba/40f6da3288e38162d179ca16536e6b7595c843654a9835e689988e803856/uv_release-0.30.0-py3-none-any.whl", hash = "sha256:7adcfa85d9863f9928819c8c5f6be56c5005663da54922d13bdcd1494b933e90", size = 92180, upload-time = "2026-04-27T22:43:39.443Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/7d/0a94d701c4e766182b6b524fa7936882716bf50d542c7b78a67898fd43f8/uv_release-0.30.2a0-py3-none-any.whl", hash = "sha256:be0e0f1f4f067828ca02f6a9d7420d329b60ed2929cd148d3948ffe36496b05c", size = 94297, upload-time = "2026-04-28T16:44:55.607Z" },
 ]
 
 [[package]]
