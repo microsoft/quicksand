@@ -1,19 +1,19 @@
 [project]
 name = "quicksand-ubuntu"
-version = "0.9.0"
+version = "0.9.1.dev0"
 description = "Pre-built Ubuntu 24.04 VM image for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
-    "quicksand-core>=0.11.0,<0.12.0",
+    "quicksand-core>=0.11.1.dev0,<0.12.0",
 ]
 
 [dependency-groups]
 dev = ["quicksand-image-tools>=0.4.4"]
 
 [build-system]
-requires = ["hatchling", "quicksand-image-tools>=0.5.0,<0.6.0", "quicksand-core>=0.11.0,<0.12.0", "quicksand-qemu>=0.5.0,<0.6.0", "quicksand-smb>=0.4.0,<0.5.0"]
+requires = ["hatchling", "quicksand-image-tools>=0.5.1.dev0,<0.6.0", "quicksand-core>=0.11.1.dev0,<0.12.0", "quicksand-qemu>=0.5.1.dev0,<0.6.0", "quicksand-smb>=0.4.1.dev0,<0.5.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

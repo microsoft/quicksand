@@ -823,7 +823,7 @@ wheels = [
 
 [[package]]
 name = "quick-sandbox"
-version = "0.11.0"
+version = "0.11.1.dev0"
 source = { editable = "packages/quicksand" }
 dependencies = [
     { name = "quicksand-core" },
@@ -945,7 +945,7 @@ dev = []
 
 [[package]]
 name = "quicksand-base-scaffold"
-version = "0.3.0"
+version = "0.3.1.dev0"
 source = { editable = "packages/dev/quicksand-base-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -960,12 +960,12 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-build-tools"
-version = "0.5.0"
+version = "0.5.1.dev0"
 source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.11.0"
+version = "0.11.1.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "httpx" },
@@ -1014,7 +1014,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-image-tools"
-version = "0.5.0"
+version = "0.5.1.dev0"
 source = { editable = "packages/dev/quicksand-image-tools" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1025,7 +1025,7 @@ requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core"
 
 [[package]]
 name = "quicksand-overlay-scaffold"
-version = "0.3.0"
+version = "0.3.1.dev0"
 source = { editable = "packages/dev/quicksand-overlay-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1042,17 +1042,17 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-qemu"
-version = "0.5.0"
+version = "0.5.1.dev0"
 source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
 name = "quicksand-smb"
-version = "0.4.0"
+version = "0.4.1.dev0"
 source = { editable = "packages/quicksand-smb" }
 
 [[package]]
 name = "quicksand-ubuntu"
-version = "0.9.0"
+version = "0.9.1.dev0"
 source = { editable = "packages/contrib/quicksand-ubuntu" }
 dependencies = [
     { name = "quicksand-core" },
