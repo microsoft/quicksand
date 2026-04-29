@@ -131,8 +131,13 @@ class Hooks(ReleaseHook):
         new_jobs = []
         for job in plan.jobs:
             if job.name == "build":
+                updates = {}
                 if not job.pre_hook:
-                    job = job.model_copy(update={"pre_hook": "ensure_gh"})
+                    updates["pre_hook"] = "ensure_gh"
+                if not job.post_hook:
+                    updates["post_hook"] = "retag"
+                if updates:
+                    job = job.model_copy(update=updates)
                 # Insert platform filter after download_wheels
                 new_cmds = []
                 for cmd in job.commands:
@@ -210,7 +215,8 @@ class Hooks(ReleaseHook):
     def pre_build(self) -> None:
         """No-op — gh install and image extraction handled by extract_dep_images."""
 
-    def post_build(self) -> None:
+    def retag(self) -> None:
+        """Retag platform-specific wheels for cross-OS distribution."""
         import json
         import os
 
@@ -222,3 +228,7 @@ class Hooks(ReleaseHook):
             return
         print(f"Retagging wheels for cross-platform (runner: {runner})")
         _retag_wheels(Path("dist"))
+
+    def post_build(self) -> None:
+        """Local builds — delegate to retag."""
+        self.retag()
