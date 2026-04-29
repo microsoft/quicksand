@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-alpine-desktop"
-version = "0.8.6.dev0"
+version = "0.8.6"
 description = "Minimal Alpine Linux desktop VM (Xfce4) for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"

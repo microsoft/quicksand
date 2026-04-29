@@ -40,7 +40,7 @@ dev = [
 
 [[package]]
 name = "aif-agent-sandbox"
-version = "0.3.6.dev0"
+version = "0.3.6"
 source = { editable = "packages/contrib/aif-agent-sandbox" }
 dependencies = [
     { name = "quicksand-core" },
@@ -55,7 +55,7 @@ requires-dist = [
 
 [[package]]
 name = "aif-cua-agent-sandbox"
-version = "0.2.6.dev0"
+version = "0.2.6"
 source = { editable = "packages/contrib/aif-cua-agent-sandbox" }
 dependencies = [
     { name = "aif-agent-sandbox" },
@@ -1170,7 +1170,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-alpine-desktop"
-version = "0.8.6.dev0"
+version = "0.8.6"
 source = { editable = "packages/quicksand-alpine-desktop" }
 dependencies = [
     { name = "quicksand-alpine" },
@@ -1299,7 +1299,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-ubuntu-desktop"
-version = "0.8.6.dev0"
+version = "0.8.6"
 source = { editable = "packages/quicksand-ubuntu-desktop" }
 dependencies = [
     { name = "quicksand-core" },
