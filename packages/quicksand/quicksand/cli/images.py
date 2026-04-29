@@ -89,7 +89,8 @@ def cmd_list() -> int:
     if not images:
         print("No images installed.", file=sys.stderr)
         print(
-            "Install with: pip install quick-sandbox[alpine-desktop] or quick-sandbox[ubuntu-desktop]",
+            "Install with: pip install 'quick-sandbox[alpine-desktop]'"
+            " or 'quick-sandbox[ubuntu-desktop]'",
             file=sys.stderr,
         )
         return 1
