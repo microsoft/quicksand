@@ -58,7 +58,7 @@ jobs:
   uvr-build:
     needs: [uvr-validate, check]
     runs-on: ${{ matrix.runner }}
-    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-build') }}
+    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'build') }}
     timeout-minutes: 60
     strategy:
       fail-fast: true
@@ -160,7 +160,7 @@ jobs:
     needs: [uvr-build, verify-licenses, test]
     runs-on: ubuntu-latest
     environment: release
-    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-release') }}
+    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'release') }}
     steps:
     - id: checkout
       uses: actions/checkout@v6
@@ -170,17 +170,16 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ fromJSON(inputs.plan).python_version }}
-    - id: download
-      name: Download wheels
+    - name: Configure git identity
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+    - id: release
+      name: Download wheels, tag and publish releases
       env:
         GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
-      run: uv run uvr jobs download
-    - id: publish
-      name: Tag and publish releases
-      env:
-        GH_TOKEN: ${{ github.token }}
-        UVR_PLAN: ${{ inputs.plan }}
+        RUN_ID: ${{ github.run_id }}
       run: uv run uvr jobs release
 
   # --------------------------------------------------------------------------
@@ -216,7 +215,7 @@ jobs:
   uvr-bump:
     runs-on: ubuntu-latest
     environment: release
-    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'uvr-bump') }}
+    if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'bump') }}
     needs:
     - uvr-release
     steps:
@@ -228,6 +227,10 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ fromJSON(inputs.plan).python_version }}
+    - name: Configure git identity
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
     - id: finalize
       name: Finalize release
       env:

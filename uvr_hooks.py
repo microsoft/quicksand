@@ -7,8 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from uv_release_monorepo.shared.hooks import ReleaseHook
-from uv_release_monorepo.shared.models import BuildStage, ReleasePlan
+from uv_release.types import Hooks as ReleaseHook
+from uv_release.types import Plan
 
 # Canonical runner per architecture — retag only runs on these.
 # x64 images are built natively on Linux; arm64 images are built on
@@ -83,10 +83,10 @@ def _latest_release_tag(pkg: str) -> str | None:
     return None
 
 
-class Hook(ReleaseHook):
-    def post_plan(self, plan: ReleasePlan) -> ReleasePlan:
-        """Skip jobs whose packages didn't change, and serialize build stages."""
-        changed = plan.changed.keys()
+class Hooks(ReleaseHook):
+    def post_plan(self, workspace, intent, plan: Plan) -> Plan:
+        """Skip jobs whose packages didn't change."""
+        changed = {c.package.name for c in plan.changes}
         if "test" not in plan.skip and not (changed & _TEST_PACKAGES):
             plan.skip.append("test")
         if "verify-licenses" not in plan.skip and "quicksand-qemu" not in changed:
@@ -95,7 +95,6 @@ class Hook(ReleaseHook):
         # Inject per-VM test install commands into the plan.
         # The workflow downloads built wheels into dist/ via download-artifact.
         # For unchanged packages we fetch their latest release wheels too.
-        changed = plan.changed.keys()
         install_lines = [
             "uv venv --seed",
             "uv pip install --reinstall pytest pytest-timeout pytest-asyncio",
@@ -119,45 +118,80 @@ class Hook(ReleaseHook):
             " dist/quicksand-*.whl quicksand-ubuntu quicksand-alpine"
         )
         install = "\n".join(install_lines)
-        plan.test_install = {  # ty: ignore[unresolved-attribute]
-            vm: install for vm in ("ubuntu", "alpine")
-        }
+        plan = plan.model_copy(
+            update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
+        )
 
-        # Serialize build stages: split multi-package stages into one stage
-        # per package so only one VM runs at a time per runner, preventing
-        # host disk exhaustion from concurrent overlay builds.
-        for runner_key, stages in plan.build_commands.items():
-            serialized: list[BuildStage] = []
-            for stage in stages:
-                if len(stage.packages) <= 1:
-                    serialized.append(stage)
-                    continue
-                first = True
-                for pkg_name, cmds in stage.packages.items():
-                    serialized.append(
-                        BuildStage(
-                            setup=stage.setup if first else [],
-                            packages={pkg_name: cmds},
-                            cleanup=[],
+        # Wire the build pre-hook to ensure gh CLI is available, and
+        # inject a platform-filter command after dep downloads.  uv
+        # incorrectly picks linux_aarch64 over macosx_arm64 from find-links
+        # when both are present, so we remove non-native wheels after download.
+        from uv_release.commands import ShellCommand
+
+        new_jobs = []
+        for job in plan.jobs:
+            if job.name == "build":
+                updates = {}
+                if not job.pre_hook:
+                    updates["pre_hook"] = "ensure_gh"
+                if not job.post_hook:
+                    updates["post_hook"] = "retag"
+                if updates:
+                    job = job.model_copy(update=updates)
+                # Insert platform filter after download_wheels
+                new_cmds = []
+                for cmd in job.commands:
+                    new_cmds.append(cmd)
+                    if getattr(cmd, "type", None) == "download_wheels":
+                        new_cmds.append(
+                            ShellCommand(
+                                label="Remove non-native wheels from deps",
+                                check=False,
+                                args=[
+                                    "python3",
+                                    "scripts/ci/filter_deps_platform.py",
+                                    "deps",
+                                ],
+                            )
                         )
-                    )
-                    first = False
-                if stage.cleanup and serialized:
-                    serialized[-1].cleanup = stage.cleanup
-            plan.build_commands[runner_key] = serialized
+                job = job.model_copy(update={"commands": new_cmds})
+            new_jobs.append(job)
+        plan = plan.model_copy(update={"jobs": new_jobs})
 
         return plan
 
-    def pre_build(self, plan: ReleasePlan, runner: list[str] | None = None) -> None:
-        """Install gh CLI on Windows runners (not pre-installed on self-hosted)."""
+    def ensure_gh(self) -> None:
+        """Ensure gh CLI is available (not pre-installed on all runners)."""
+        import platform
+
+        if shutil.which("gh"):
+            return
+        system = platform.system().lower()
+        if system == "linux":
+            print("Installing gh CLI...")
+            install_cmd = (
+                "curl -fsSL https://cli.github.com/packages/"
+                "githubcli-archive-keyring.gpg"
+                " | sudo dd of=/usr/share/keyrings/"
+                "githubcli-archive-keyring.gpg"
+                " && echo 'deb [arch=amd64 signed-by="
+                "/usr/share/keyrings/githubcli-archive-keyring.gpg]"
+                " https://cli.github.com/packages stable main'"
+                " | sudo tee /etc/apt/sources.list.d/github-cli.list"
+                " > /dev/null"
+                " && sudo apt-get update -qq"
+                " && sudo apt-get install -y -qq gh"
+            )
+            subprocess.run(["bash", "-c", install_cmd], check=True)
+        elif system == "windows":
+            self._install_gh_windows()
+
+    def _install_gh_windows(self) -> None:
+        """Install gh CLI on Windows via zip download."""
         import os
         import platform
         import urllib.request
-
-        if platform.system() != "Windows":
-            return
-        if shutil.which("gh"):
-            return
+        import zipfile
 
         print("Installing gh CLI for Windows...")
         machine = platform.machine().lower()
@@ -167,12 +201,9 @@ class Hook(ReleaseHook):
         gh_dir = Path("gh_cli")
         try:
             urllib.request.urlretrieve(url, zip_path)
-            import zipfile
-
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(gh_dir)
             zip_path.unlink(missing_ok=True)
-            # Find the bin directory inside the extracted archive
             for candidate in gh_dir.rglob("gh.exe"):
                 os.environ["PATH"] = str(candidate.parent) + os.pathsep + os.environ.get("PATH", "")
                 print(f"Installed gh CLI: {candidate}")
@@ -180,10 +211,24 @@ class Hook(ReleaseHook):
             print("Warning: gh.exe not found in zip archive")
         except Exception as e:
             print(f"Warning: failed to install gh CLI: {e}")
-            print("Build may fail if dependency wheels need to be fetched")
 
-    def post_build(self, plan: ReleasePlan, runner: list[str] | None = None) -> None:
-        if runner is None or runner not in RETAG_RUNNERS:
+    def pre_build(self) -> None:
+        """No-op — gh install and image extraction handled by extract_dep_images."""
+
+    def retag(self) -> None:
+        """Retag platform-specific wheels for cross-OS distribution."""
+        import json
+        import os
+
+        runner_json = os.environ.get("UVR_RUNNER")
+        if not runner_json:
+            return
+        runner = json.loads(runner_json)
+        if runner not in RETAG_RUNNERS:
             return
         print(f"Retagging wheels for cross-platform (runner: {runner})")
         _retag_wheels(Path("dist"))
+
+    def post_build(self) -> None:
+        """Local builds — delegate to retag."""
+        self.retag()
