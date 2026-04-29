@@ -171,7 +171,6 @@ def cmd_extend(args: argparse.Namespace) -> None:
             print(f"  {alias}: failed - {result.stderr.strip()}")
 
 
-
 def cmd_setup(args: argparse.Namespace) -> None:
     """One-time provisioning: create resource group and deploy Bicep."""
     from pathlib import Path
@@ -282,7 +281,6 @@ def main() -> int:
     p_setup = sub.add_parser("setup", help="One-time VM provisioning")
     p_setup.add_argument("--ssh-key", help="SSH public key string")
     p_setup.set_defaults(func=cmd_setup)
-
 
     args = parser.parse_args()
     args.func(args)
