@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        task: [check, test-unit]
+        task: [check, "test:unit"]
     steps:
     - uses: actions/checkout@v6
       with:
