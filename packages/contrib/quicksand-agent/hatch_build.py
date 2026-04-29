@@ -1,4 +1,4 @@
-"""Hatch build hook for the AIF agent sandbox overlay.
+"""Hatch build hook for the quicksand-agent overlay.
 
 Boots Ubuntu, installs uv, Python 3.12, build-essential, and Python packages
 (requests, pyyaml, ddgs, markitdown), then saves the overlay.
@@ -15,14 +15,14 @@ from typing import Any
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
-SAVE_NAME = "aif-agent-sandbox"
+SAVE_NAME = "quicksand-agent"
 SHELL = "/bin/bash"
 
-logger = logging.getLogger("aif-agent-sandbox")
+logger = logging.getLogger("quicksand-agent")
 
 
 async def _setup(shell: Callable[..., Coroutine[Any, Any, Any]]) -> None:
-    """Install steps for the AIF agent sandbox."""
+    """Install steps for the agent sandbox."""
 
     # ── Install uv ──────────────────────────────────────────────
     await shell("curl -LsSf https://astral.sh/uv/install.sh | sh", timeout=60)
@@ -85,7 +85,7 @@ PROF
 class OverlayImageBuildHook(BuildHookInterface):
     """Build hook that creates an overlay save from a running sandbox."""
 
-    PLUGIN_NAME = "aif-agent-sandbox-image"
+    PLUGIN_NAME = "quicksand-agent-image"
 
     def initialize(self, version: str, build_data: dict) -> None:
         from quicksand_image_tools.build_utils import set_platform_wheel_tag
@@ -93,7 +93,7 @@ class OverlayImageBuildHook(BuildHookInterface):
         if not set_platform_wheel_tag(build_data, target_name=self.target_name, version=version):
             return
 
-        pkg_dir = Path(self.root) / "aif_agent_sandbox"
+        pkg_dir = Path(self.root) / "quicksand_agent"
         save_dir = pkg_dir / "images"
         overlays_dir = save_dir / "overlays"
 

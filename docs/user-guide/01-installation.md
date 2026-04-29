@@ -2,74 +2,20 @@
 
 *See [Under the Hood: Installation](../under-the-hood/01-installation.md) for how these packages map to QEMU binaries and disk images.*
 
-::: warning Not yet released to PyPI
-Quicksand is not yet on PyPI. Once released, installation will be `pip install quicksand[qemu,ubuntu]`. For now, install from GitHub or Azure DevOps Artifacts as shown below.
-:::
-
 ## Install quicksand
 
 ```bash
-pip install git+ssh://git@github.com/microsoft/quicksand#subdirectory=packages/quicksand
+pip install 'quick-sandbox[qemu,alpine,ubuntu]'
 ```
 
-This installs the core Python library and CLI. No native dependencies yet. QEMU and VM images are installed separately.
+This installs the core Python library, CLI, QEMU, and VM images. No native dependencies needed.
 
 To declare it as a dependency in your `pyproject.toml`:
 
 ```toml
 [project]
 dependencies = [
-    "quicksand",
-]
-
-[tool.uv.sources]
-quicksand = { git = "ssh://git@github.com/microsoft/quicksand", subdirectory = "packages/quicksand" }
-```
-
-To pin to a specific release, use a `quicksand/vX.Y.Z` tag:
-
-```toml
-[tool.uv.sources]
-quicksand = { git = "ssh://git@github.com/microsoft/quicksand", subdirectory = "packages/quicksand", tag = "quicksand/v0.9.0" }
-```
-
-### Install from Azure DevOps Artifacts
-
-First, install `keyring` with the Azure Artifacts backend so `uv`/`pip` can authenticate automatically:
-
-```bash
-uv tool install keyring --with artifacts-keyring
-```
-
-Then install quicksand from the feed:
-
-```bash
-uv pip install \
-  --index-url https://VssSessionToken@pkgs.dev.azure.com/msraif/_packaging/packages/pypi/simple/ \
-  --keyring-provider subprocess \
-  'quicksand[qemu,alpine,ubuntu]'
-```
-
-With this method QEMU and images are included as extras. No separate `quicksand install` step needed.
-
-To declare the feed as a dependency source in your own `pyproject.toml`:
-
-```toml
-[tool.uv]
-keyring-provider = "subprocess"
-
-[[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple"
-default = true
-
-[[tool.uv.index]]
-name = "azure-msraif"
-url = "https://VssSessionToken@pkgs.dev.azure.com/msraif/_packaging/packages/pypi/simple/"
-
-[project]
-dependencies = [
-    "quicksand[qemu,alpine,ubuntu]",
+    "quick-sandbox[qemu,alpine,ubuntu]",
 ]
 ```
 
@@ -109,14 +55,14 @@ async with Sandbox(image="ubuntu") as sb:
 | `ubuntu` | — | No | 341 MB | 346 MB | 0.88s | 0.91s |
 | `alpine-desktop` | `alpine` | Yes | 287 MB | 290 MB | 0.47s | 0.54s |
 | `ubuntu-desktop` | `ubuntu` | Yes | 252 MB | 257 MB | 0.90s | 0.96s |
-| `aif-agent-sandbox` | `ubuntu` | No | ~304 MB | ~308 MB | 0.91s | 0.92s |
-| `aif-cua-agent-sandbox` | `aif-agent-sandbox` | No | ~445 MB | ~450 MB | 0.85s | 1.01s |
+| `quicksand-agent` | `ubuntu` | No | ~304 MB | ~308 MB | 0.91s | 0.92s |
+| `quicksand-cua` | `quicksand-agent` | No | ~445 MB | ~450 MB | 0.85s | 1.01s |
 
 Boot times measured on macOS ARM64 (Apple M3 Max, HVF) with `quicksand benchmark -n 5`. First boot is slower due to cold cache.
 
 `quicksand install all` installs QEMU and all images.
 
-Alpine is smaller and boots faster. Ubuntu has a larger package ecosystem. Desktop images are overlays on their base image and add a graphical environment for screenshot/keyboard/mouse interaction. The `aif-*` images are pre-configured agent environments with Python 3.12, browser automation tools, and common AI agent dependencies.
+Alpine is smaller and boots faster. Ubuntu has a larger package ecosystem. Desktop images are overlays on their base image and add a graphical environment for screenshot/keyboard/mouse interaction. The agent sandbox images are pre-configured agent environments with Python 3.12, browser automation tools, and common AI agent dependencies.
 
 ## Verify the installation
 

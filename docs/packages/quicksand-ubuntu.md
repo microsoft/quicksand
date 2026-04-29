@@ -6,17 +6,16 @@ Ubuntu is ideal for AI agents that need a full Linux environment with the apt pa
 
 ## Installation
 
-Install quicksand CLI first:
-
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
+pip install 'quick-sandbox[qemu,ubuntu]'
 ```
 
+Or install separately:
+
 ```bash
+pip install quick-sandbox
 quicksand install ubuntu
 ```
-
-This installs `quicksand` with the bundled Ubuntu 24.04 image.
 
 ## Usage
 

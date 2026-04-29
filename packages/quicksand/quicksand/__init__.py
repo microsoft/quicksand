@@ -4,7 +4,7 @@ Quicksand is a VM harness for AI agents.
 It gives agents a real computer to work with. They can install packages, run
 scripts, browse the web, and manipulate files inside a sandboxed VM.
 
-Quick start (pip install quicksand[ubuntu]):
+Quick start (pip install quick-sandbox[ubuntu]):
     import asyncio
     from quicksand import Sandbox
 
@@ -15,7 +15,7 @@ Quick start (pip install quicksand[ubuntu]):
 
     asyncio.run(main())
 
-Or with Alpine (pip install quicksand[alpine]):
+Or with Alpine (pip install quick-sandbox[alpine]):
     from quicksand import Sandbox
 
     async with Sandbox(image="alpine") as sb:
@@ -28,9 +28,9 @@ Or with custom configuration:
         result = await sb.execute("cat /etc/os-release")
 
 Install extras:
-    pip install quicksand[ubuntu]   # Bundled Ubuntu image (~341MB)
-    pip install quicksand[alpine]   # Bundled Alpine image (~78MB, faster boot)
-    pip install quicksand[dev]      # Build custom images from Dockerfiles
+    pip install quick-sandbox[ubuntu]   # Bundled Ubuntu image (~341MB)
+    pip install quick-sandbox[alpine]   # Bundled Alpine image (~78MB, faster boot)
+    pip install quick-sandbox[dev]      # Build custom images from Dockerfiles
 """
 
 # Re-export everything from quicksand-core
@@ -150,4 +150,9 @@ __all__ = [  # noqa: RUF022
     "UbuntuDesktopSandbox",
 ]
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("quicksand")
+except Exception:
+    __version__ = "0.0.0"

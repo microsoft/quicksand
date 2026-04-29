@@ -91,7 +91,7 @@ For Alpine, use `rust:alpine` with `musl-dev` for static linking.
 
 ## Python API (__init__.py)
 
-Reference: `packages/quicksand-ubuntu/quicksand_ubuntu/__init__.py`
+Reference: `packages/contrib/quicksand-ubuntu/quicksand_ubuntu/__init__.py`
 
 Must export:
 - `image` — `_ImageProvider` instance (registered as `quicksand.images` entry point)
@@ -126,7 +126,7 @@ artifacts = [
 
 ## hatch_build.py
 
-Reference: `packages/quicksand-ubuntu/hatch_build.py`
+Reference: `packages/contrib/quicksand-ubuntu/hatch_build.py`
 
 The build hook detects architecture, sets platform-specific wheel tags, and builds the Docker image if the qcow2 doesn't exist yet.
 

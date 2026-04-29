@@ -77,7 +77,7 @@ def install(*extras: str, arch: str | None = None) -> None:
 
     Args:
         *extras: One or more extra/package names (e.g. ``"qemu"``, ``"ubuntu"``,
-            ``"all"``, ``"ubuntu@0.4.0"``, ``"aif-agent-sandbox"``).
+            ``"all"``, ``"ubuntu@0.4.0"``, ``"quicksand-agent"``).
         arch: Target architecture (e.g. ``"amd64"``, ``"arm64"``).
             Downloads cross-platform wheels for use with ``quicksand run --arch``.
 

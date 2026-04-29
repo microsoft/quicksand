@@ -4,18 +4,10 @@ Pre-built Ubuntu 24.04 Desktop VM image with Xfce4 for the [quicksand](https://g
 
 ## Installation
 
-Install quicksand CLI first:
-
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
-```
-
-```bash
+pip install quick-sandbox
 quicksand install ubuntu-desktop
-quicksand images install ubuntu-desktop
 ```
-
-The image (~7.3GB) is downloaded and cached at `~/.quicksand/images/` on first install.
 
 ## Usage
 

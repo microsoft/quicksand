@@ -1,10 +1,10 @@
-"""aif-cua-agent-sandbox: overlay image package for quicksand."""
+"""quicksand-cua: overlay image package for quicksand."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from .sandbox import AifCuaAgentSandbox
+from .sandbox import CuaSandbox
 
 __version__ = "0.1.7"
 
@@ -12,10 +12,10 @@ PACKAGE_DIR = Path(__file__).parent
 IMAGES_DIR = PACKAGE_DIR / "images"
 
 
-class _AifCuaAgentImageProvider:
-    """ImageProvider for the bundled aif-cua-agent-sandbox overlay."""
+class _CuaSandboxImageProvider:
+    """ImageProvider for the bundled quicksand-cua overlay."""
 
-    name = "aif-cua-agent-sandbox"
+    name = "quicksand-cua"
     type = "overlay"
     images_dir = IMAGES_DIR
 
@@ -31,13 +31,13 @@ class _AifCuaAgentImageProvider:
 
 
 # Module-level instance — registered as quicksand.images entry point
-image = _AifCuaAgentImageProvider()
+image = _CuaSandboxImageProvider()
 
 
 __all__ = [
     "IMAGES_DIR",
     "PACKAGE_DIR",
-    "AifCuaAgentSandbox",
+    "CuaSandbox",
     "__version__",
     "image",
 ]

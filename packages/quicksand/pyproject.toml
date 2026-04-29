@@ -1,5 +1,5 @@
 [project]
-name = "quicksand"
+name = "quick-sandbox"
 version = "0.10.4.dev0"
 description = "A VM harness for AI agents that works on macOS, Linux, and Windows."
 readme = "README.md"
@@ -15,6 +15,8 @@ ubuntu = ["quicksand-ubuntu>=0.7.2"]
 alpine = ["quicksand-alpine>=0.7.2"]
 alpine-desktop = ["quicksand-alpine-desktop>=0.7.5"]
 ubuntu-desktop = ["quicksand-ubuntu-desktop>=0.7.5"]
+quicksand-agent = ["quicksand-agent>=0.3.7"]
+quicksand-cua = ["quicksand-cua>=0.2.7"]
 dev = ["quicksand-image-tools>=0.3.2", "quicksand-overlay-scaffold>=0.1.4", "quicksand-base-scaffold>=0.1.3"]
 all = [
     "quicksand-qemu>=0.4.3",
@@ -23,6 +25,8 @@ all = [
     "quicksand-alpine-desktop>=0.7.5",
     "quicksand-ubuntu-desktop>=0.7.5",
     "quicksand-image-tools>=0.3.2",
+    "quicksand-agent>=0.3.7",
+    "quicksand-cua>=0.2.7",
 ]
 
 [project.scripts]
@@ -40,3 +44,5 @@ quicksand-overlay-scaffold = { workspace = true }
 quicksand-base-scaffold = { workspace = true }
 quicksand-core = { workspace = true }
 quicksand-qemu = { workspace = true }
+quicksand-agent = { workspace = true }
+quicksand-cua = { workspace = true }

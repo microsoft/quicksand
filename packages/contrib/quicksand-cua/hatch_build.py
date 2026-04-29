@@ -14,11 +14,11 @@ from typing import Any
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
-SAVE_NAME = "aif-cua-agent-sandbox"
-BASE_IMAGE = "aif-agent-sandbox"
+SAVE_NAME = "quicksand-cua"
+BASE_IMAGE = "quicksand-agent"
 SHELL = "/bin/bash"
 
-logger = logging.getLogger("aif-cua-agent-sandbox")
+logger = logging.getLogger("quicksand-cua")
 
 # Type alias for the shell callable passed to _setup
 Shell = Callable[..., Coroutine[Any, Any, Any]]
@@ -178,7 +178,7 @@ EOF
 class OverlayImageBuildHook(BuildHookInterface):
     """Build hook that creates an overlay save from a running sandbox."""
 
-    PLUGIN_NAME = "aif-cua-agent-sandbox-image"
+    PLUGIN_NAME = "quicksand-cua-image"
 
     def initialize(self, version: str, build_data: dict) -> None:
         from quicksand_image_tools.build_utils import set_platform_wheel_tag
@@ -186,7 +186,7 @@ class OverlayImageBuildHook(BuildHookInterface):
         if not set_platform_wheel_tag(build_data, target_name=self.target_name, version=version):
             return
 
-        pkg_dir = Path(self.root) / "aif_cua_agent_sandbox"
+        pkg_dir = Path(self.root) / "quicksand_cua"
         save_dir = pkg_dir / "images"
         overlays_dir = save_dir / "overlays"
 

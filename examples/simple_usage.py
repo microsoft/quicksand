@@ -3,7 +3,7 @@
 Example for Persona 1: "Just Give Me a Sandbox"
 
 This shows the simplest possible usage with the bundled Ubuntu image.
-Install with: pip install quicksand[ubuntu]
+Install with: pip install quick-sandbox[ubuntu]
 """
 
 import asyncio

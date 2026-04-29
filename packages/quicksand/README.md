@@ -4,20 +4,13 @@ Quicksand is a VM harness for AI agents that works on macOS, Linux, and Windows.
 
 ## Quick Start
 
-**1. Install quicksand CLI**
+**1. Install quicksand**
 
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
+pip install 'quick-sandbox[qemu,ubuntu]'
 ```
 
-**2. Install a sandbox**
-
-```bash
-quicksand install ubuntu  # Ubuntu 24.04 (~300MB)
-quicksand install alpine  # Alpine 3.21 (~75MB, faster boot)
-```
-
-**3. Run the sandbox in python**
+**2. Run the sandbox in python**
 
 ```python
 import asyncio
@@ -48,12 +41,12 @@ async def main():
         await sb.execute("pip install requests")
         await sb.execute("python /mnt/workspace/script.py")
         print((await sb.execute("cat /tmp/output.txt")).stdout)
-        await sb.save("./my-save")  # Save disk state, VM keeps running
+        await sb.save("my-save")  # Save disk state, VM keeps running
 
 asyncio.run(main())
 ```
 
-See [examples/](examples/) for more. For implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+See [examples/](examples/) for more. For implementation details, see [Under the Hood](../../docs/under-the-hood/).
 
 ## How It Works
 

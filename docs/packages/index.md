@@ -16,11 +16,11 @@ Quicksand is a monorepo with 15 packages organized into four groups.
 | Package | What it is |
 |---------|-----------|
 | [quicksand-ubuntu](quicksand-ubuntu.md) | Ubuntu 24.04 headless (~341 MB) |
-| [quicksand-alpine](quicksand-alpine.md) | Alpine 3.21 headless (~78 MB) |
+| [quicksand-alpine](quicksand-alpine.md) | Alpine 3.23 headless (~78 MB) |
 | [quicksand-ubuntu-desktop](quicksand-ubuntu-desktop.md) | Ubuntu 24.04 + Xfce4 + Firefox |
-| [quicksand-alpine-desktop](quicksand-alpine-desktop.md) | Alpine 3.21 + Xfce4 + Chromium |
-| [aif-agent-sandbox](aif-agent-sandbox.md) | Ubuntu + Python 3.12, uv, build tools |
-| [aif-cua-agent-sandbox](aif-cua-agent-sandbox.md) | AIF Agent Sandbox + Playwright, Chromium |
+| [quicksand-alpine-desktop](quicksand-alpine-desktop.md) | Alpine 3.23 + Xfce4 + Chromium |
+| [quicksand-agent](quicksand-agent.md) | Ubuntu + Python 3.12, uv, build tools |
+| [quicksand-cua](quicksand-cua.md) | Agent Sandbox + Playwright, Chromium |
 
 ## Dev tools
 

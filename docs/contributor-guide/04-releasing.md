@@ -4,7 +4,7 @@ Releases are managed via the `/release` Claude Code skill.
 
 ## Flow
 
-1. **Dry run.** Run `uv run poe release-dry-run` to preview what will be built.
+1. **Dry run.** Run `uv run poe release:dry-run` to preview what will be built.
 2. **Branch.** Create `release/v{version}` from main.
 3. **Dispatch.** Run `gh workflow run release.yml --ref release/v{version}`.
 4. **Monitor.** CI runs check, build, overlay build, test, and release.

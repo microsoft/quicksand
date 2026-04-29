@@ -1,68 +1,24 @@
 # Quicksand
 
-Quicksand is a Python API for launching and controlling [QEMU](https://www.qemu.org) virtual machines. It provides pre-built Linux VMs for ubuntu and alpine distros. It works on macOS, Linux, and Windows with no root privileges, no Docker, and no system dependencies. Just `pip install quicksand`.
+[![PyPI](https://img.shields.io/pypi/v/quick-sandbox)](https://pypi.org/project/quick-sandbox/)
+[![Docs](https://img.shields.io/badge/docs-quicksand-blue)](https://microsoft.github.io/quicksand/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+![Quicksand](docs/banner-light.png)
+
+Quicksand is an async Python API to launch, control, and snapshot [QEMU](https://www.qemu.org) virtual machines with a particular focus on sandboxing AI agents. Quicksand provides pre-built Linux VMs for Ubuntu and Alpine distros. It works on x86_64 and ARM64 across macOS, Linux, and Windows with no root privileges, no Docker, and no system dependencies. Just `pip install quick-sandbox`.
 
 ## Installation
 
-*Note: once released to PyPI this all just becomes: `pip install 'quicksand[qemu,ubuntu]'`*
+```bash
+pip install 'quick-sandbox[qemu,alpine]'
+```
 
-### Install from Azure DevOps Artifacts (Preferred)
-
-First, install `keyring` with the Azure Artifacts backend so `uv`/`pip` can authenticate automatically:
+Or install the core package and add QEMU/images separately:
 
 ```bash
-uv tool install keyring --with artifacts-keyring
-```
-
-Then install quicksand from the feed:
-
-```bash
-uv pip install \
-  --index-url https://pkgs.dev.azure.com/msraif/_packaging/packages/pypi/simple/ \
-  --keyring-provider subprocess \
-  'quicksand[qemu,alpine,ubuntu]'
-```
-
-To declare the feed as a dependency source in your own `pyproject.toml`:
-
-```toml
-[tool.uv]
-keyring-provider = "subprocess"
-
-[[tool.uv.index]]
-name = "azure-msraif"
-url = "https://VssSessionToken@pkgs.dev.azure.com/msraif/_packaging/packages/pypi/simple/"
-
-[project]
-dependencies = [
-    "quicksand[qemu,alpine,ubuntu]",
-]
-```
-
-### Install from GitHub
-
-```bash
-pip install git+ssh://git@github.com/microsoft/quicksand#subdirectory=packages/quicksand
-quicksand install qemu ubuntu
-```
-
-To declare it as a dependency in your `pyproject.toml`:
-
-```toml
-[project]
-dependencies = [
-    "quicksand",
-]
-
-[tool.uv.sources]
-quicksand = { git = "ssh://git@github.com/microsoft/quicksand", subdirectory = "packages/quicksand" }
-```
-
-To pin to a specific release, use a `quicksand/vX.Y.Z` tag:
-
-```toml
-[tool.uv.sources]
-quicksand = { git = "ssh://git@github.com/microsoft/quicksand", subdirectory = "packages/quicksand", tag = "quicksand/v0.9.0" }
+pip install quick-sandbox
+quicksand install qemu alpine
 ```
 
 ## Usage
@@ -188,77 +144,19 @@ Sandbox(
 | Image | Type | Wheel size | Install command | What is it |
 |-------|------|-----------|-----------------|------------|
 | `ubuntu` | Base | ~341 MB | `quicksand install ubuntu` | Ubuntu 24.04 headless |
-| `alpine` | Base | ~78 MB | `quicksand install alpine` | Alpine 3.21 headless (faster boot) |
+| `alpine` | Base | ~78 MB | `quicksand install alpine` | Alpine 3.23 headless (faster boot) |
 | `ubuntu-desktop` | Overlay (`ubuntu`) | ~263 MB | `quicksand install ubuntu-desktop` | Ubuntu 24.04 + Xfce4 + Firefox |
-| `alpine-desktop` | Overlay (`alpine`) | ~310 MB | `quicksand install alpine-desktop` | Alpine 3.21 + Xfce4 + Chromium |
-| `aif-agent-sandbox` | Overlay (`ubuntu`) | ~304 MB | `quicksand install aif-agent-sandbox` | Ubuntu + Python 3.12, uv, build-essential, requests, pyyaml, ddgs, markitdown |
-| `aif-cua-agent-sandbox` | Overlay (`aif-agent-sandbox`) | ~445 MB | `quicksand install aif-cua-agent-sandbox` | AIF Agent Sandbox + Xvfb, x11vnc, noVNC, Playwright, Chromium |
+| `alpine-desktop` | Overlay (`alpine`) | ~310 MB | `quicksand install alpine-desktop` | Alpine 3.23 + Xfce4 + Chromium |
+| `quicksand-agent` | Overlay (`ubuntu`) | ~304 MB | `quicksand install quicksand-agent` | Ubuntu + Python 3.12, uv, build-essential, requests, pyyaml, ddgs, markitdown |
+| `quicksand-cua` | Overlay (`quicksand-agent`) | ~445 MB | `quicksand install quicksand-cua` | Agent Sandbox + Xvfb, x11vnc, noVNC, Playwright, Chromium |
 
 ## Building from source
-
-Clone the repo and set up the workspace:
 
 ```bash
 git clone git@github.com:microsoft/quicksand.git
 cd quicksand
 uv sync
-```
-
-### Building individual packages
-
-Each package lives under `packages/` (or `packages/dev/`, `packages/contrib/`). To build a wheel:
-
-```bash
-uv build --package <package-name> --find-links dist/
-```
-
-Image packages (e.g. `quicksand-ubuntu`, `aif-agent-sandbox`) produce platform-specific wheels that contain qcow2 disk images. They require their base image wheels to be available in `dist/`, so use `--find-links dist/` and build dependencies first.
-
-For overlay image packages that build on top of other images, you also need `--no-sources` so the build uses the pre-built wheel rather than the editable source (which has no images):
-
-```bash
-uv build --package aif-cua-agent-sandbox --find-links dist/ --no-sources
-```
-
-### Build order
-
-Packages must be built bottom-up since image packages depend on their base:
-
-1. `quicksand-core`, `quicksand-qemu`, `quicksand-smb` (pure runtime, no images)
-2. `quicksand-ubuntu`, `quicksand-alpine` (base images, built from Dockerfiles)
-3. `quicksand-ubuntu-desktop`, `quicksand-alpine-desktop`, `aif-agent-sandbox` (overlays on base images)
-4. `aif-cua-agent-sandbox` (overlay on `aif-agent-sandbox`)
-
-### Installing and running built wheels
-
-The workspace uses editable installs by default, which means image packages won't have their bundled qcow2 files. To test a built wheel, install it explicitly and use `--no-project` to prevent `uv run` from syncing back to the editable source:
-
-```bash
-uv pip install --force-reinstall --find-links dist/ dist/aif_cua_agent_sandbox-0.1.6-py3-none-macosx_11_0_arm64.whl
-uv run --no-project quicksand run aif-cua-agent-sandbox
-```
-
-Or from Python:
-
-```bash
-uv run --no-project python -c "
-import asyncio
-from quicksand_core import Sandbox
-
-async def main():
-    async with Sandbox(image='aif-cua-agent-sandbox') as sb:
-        r = await sb.execute('echo hello')
-        print(r.stdout)
-
-asyncio.run(main())
-"
-```
-
-### Running checks
-
-```bash
-uv run poe fix    # auto-format and fix lint issues
-uv run poe check  # type-check, lint, and run tests
+uv run uvr build --all-packages
 ```
 
 ## Documentation

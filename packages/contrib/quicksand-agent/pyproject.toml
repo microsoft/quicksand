@@ -1,5 +1,5 @@
 [project]
-name = "aif-agent-sandbox"
+name = "quicksand-agent"
 version = "0.3.7.dev0"
 description = "Overlay image package for quicksand"
 readme = "README.md"
@@ -16,14 +16,14 @@ requires = ["hatchling", "quicksand-image-tools", "quicksand-core", "quicksand-u
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["aif_agent_sandbox"]
+packages = ["quicksand_agent"]
 artifacts = [
-    "aif_agent_sandbox/images/manifest.json",
-    "aif_agent_sandbox/images/overlays/*.qcow2",
+    "quicksand_agent/images/manifest.json",
+    "quicksand_agent/images/overlays/*.qcow2",
 ]
 
 [project.entry-points."quicksand.images"]
-aif-agent-sandbox = "aif_agent_sandbox:image"
+quicksand-agent = "quicksand_agent:image"
 
 
 [tool.hatch.build.targets.wheel.hooks.custom]

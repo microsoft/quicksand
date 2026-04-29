@@ -1,6 +1,6 @@
 # Quicksand Alpine
 
-This package bundles a pre-built Alpine Linux 3.21 VM image for the [quicksand](https://github.com/microsoft/quicksand) agent harness. No downloads required after installation.
+This package bundles a pre-built Alpine Linux 3.23 VM image for the [quicksand](https://github.com/microsoft/quicksand) agent harness. No downloads required after installation.
 
 Alpine is lightweight and boots quickly, making it ideal for AI agents that need fast sandbox startup.
 
@@ -16,17 +16,16 @@ Use Alpine when you need fast, lightweight sandboxes. Use Ubuntu when you need b
 
 ## Installation
 
-Install quicksand CLI first:
-
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
+pip install 'quick-sandbox[qemu,alpine]'
 ```
 
+Or install separately:
+
 ```bash
+pip install quick-sandbox
 quicksand install alpine
 ```
-
-This installs `quicksand` with the bundled Alpine image.
 
 ## Usage
 
@@ -64,7 +63,7 @@ async with Sandbox(image="alpine", memory="512M", cpus=2) as sb:
 
 ## What's Included
 
-The Alpine 3.21 image includes:
+The Alpine 3.23 image includes:
 - Python 3
 - Bash shell
 - curl, ca-certificates

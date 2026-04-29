@@ -1,10 +1,10 @@
-"""AIFAgentSandbox: pre-built overlay on quicksand-ubuntu."""
+"""quicksand-agent: pre-built overlay on quicksand-ubuntu."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from .sandbox import AIFAgentSandbox
+from .sandbox import AgentSandbox
 
 __version__ = "0.2.5"
 
@@ -12,10 +12,10 @@ PACKAGE_DIR = Path(__file__).parent
 IMAGES_DIR = PACKAGE_DIR / "images"
 
 
-class _AIFAgentImageProvider:
-    """ImageProvider for the bundled AIF agent overlay."""
+class _AgentSandboxImageProvider:
+    """ImageProvider for the bundled agent sandbox overlay."""
 
-    name = "aif-agent-sandbox"
+    name = "quicksand-agent"
     type = "overlay"
     images_dir = IMAGES_DIR
 
@@ -31,13 +31,13 @@ class _AIFAgentImageProvider:
 
 
 # Module-level instance — registered as quicksand.images entry point
-image = _AIFAgentImageProvider()
+image = _AgentSandboxImageProvider()
 
 
 __all__ = [
     "IMAGES_DIR",
     "PACKAGE_DIR",
-    "AIFAgentSandbox",
+    "AgentSandbox",
     "__version__",
     "image",
 ]

@@ -9,12 +9,15 @@ on:
 permissions:
   contents: write
   actions: read
-
+  id-token: write
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
   # --------------------------------------------------------------------------
   # Validate
   # --------------------------------------------------------------------------
-  uvr-validate:
+  validate:
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -38,7 +41,7 @@ jobs:
   # Check (lint, format, types, unit tests)
   # --------------------------------------------------------------------------
   check:
-    needs: [uvr-validate]
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: release
     strategy:
@@ -55,8 +58,8 @@ jobs:
   # --------------------------------------------------------------------------
   # Build
   # --------------------------------------------------------------------------
-  uvr-build:
-    needs: [uvr-validate, check]
+  build:
+    needs: [validate, check]
     runs-on: ${{ matrix.runner }}
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'build') }}
     timeout-minutes: 60
@@ -82,7 +85,7 @@ jobs:
         UVR_RUNNER: ${{ toJSON(matrix.runner) }}
       run: uv run uvr jobs build
     - id: upload
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v8
       with:
         name: wheels-${{ join(matrix.runner, '-') }}
         path: dist/*.whl
@@ -92,7 +95,7 @@ jobs:
   # Verify GPL licenses in QEMU wheels
   # --------------------------------------------------------------------------
   verify-licenses:
-    needs: [uvr-validate, uvr-build]
+    needs: [validate, build]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'verify-licenses')
     runs-on: ubuntu-latest
     environment: release
@@ -110,7 +113,7 @@ jobs:
   # Test (integration tests — boot VMs from built wheels)
   # --------------------------------------------------------------------------
   test:
-    needs: [uvr-build, verify-licenses]
+    needs: [build, verify-licenses]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'test')
     runs-on: ubuntu-latest
     environment: release
@@ -156,8 +159,8 @@ jobs:
   # --------------------------------------------------------------------------
   # Release — create per-package GitHub releases
   # --------------------------------------------------------------------------
-  uvr-release:
-    needs: [uvr-build, verify-licenses, test]
+  release:
+    needs: [build, verify-licenses, test]
     runs-on: ubuntu-latest
     environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'release') }}
@@ -175,49 +178,49 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
     - id: release
-      name: Download wheels, tag and publish releases
+      name: Tag and publish releases
       env:
         GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
-        RUN_ID: ${{ github.run_id }}
+        RUN_ID: ${{ fromJSON(inputs.plan).reuse_run || github.run_id }}
       run: uv run uvr jobs release
 
   # --------------------------------------------------------------------------
-  # Publish — upload wheels to Azure Artifacts
+  # Publish — upload wheels to PyPI
   # --------------------------------------------------------------------------
   publish:
-    needs: [uvr-validate, check, uvr-build, verify-licenses, uvr-release]
+    needs: [validate, check, build, verify-licenses, release]
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'publish') }}
     runs-on: ubuntu-latest
-    environment: release
+    environment: ${{ fromJSON(inputs.plan).publish_environment || null }}
+    permissions:
+      id-token: write
     steps:
-    - uses: actions/checkout@v6
+    - id: checkout
+      uses: actions/checkout@v6
       with:
-        clean: true
-    - uses: astral-sh/setup-uv@v7
-
-    - uses: actions/download-artifact@v8
+        fetch-depth: 0
+    - id: setup-uv
+      uses: astral-sh/setup-uv@v7
       with:
-        pattern: wheels-*
-        path: dist/
-        merge-multiple: true
-        run-id: ${{ fromJSON(inputs.plan).reuse_run_id != '' && fromJSON(inputs.plan).reuse_run_id || github.run_id }}
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Publish to Azure Artifacts
-      run: uv run python scripts/ci/publish_azure.py
+        python-version: ${{ fromJSON(inputs.plan).python_version }}
+    - id: publish
+      name: Publish to PyPI
       env:
+        GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
+        RUN_ID: ${{ fromJSON(inputs.plan).reuse_run || github.run_id }}
+      run: uv run uvr jobs publish
 
   # --------------------------------------------------------------------------
   # Bump — post-release version bump
   # --------------------------------------------------------------------------
-  uvr-bump:
+  bump:
     runs-on: ubuntu-latest
     environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'bump') }}
     needs:
-    - uvr-release
+    - release
     steps:
     - id: checkout
       uses: actions/checkout@v6

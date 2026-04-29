@@ -16,17 +16,16 @@ Use Alpine when you need fast, lightweight sandboxes. Use Ubuntu when you need b
 
 ## Installation
 
-Install quicksand CLI first:
-
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
+pip install 'quick-sandbox[qemu,alpine]'
 ```
 
+Or install separately:
+
 ```bash
+pip install quick-sandbox
 quicksand install alpine
 ```
-
-This installs `quicksand` with the bundled Alpine image.
 
 ## Usage
 

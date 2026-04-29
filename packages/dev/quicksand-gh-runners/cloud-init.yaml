@@ -20,8 +20,6 @@ runcmd:
   # uv
   - curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
 
-  # Keyring for Azure Artifacts auth (uses managed identity)
-  - uv tool install keyring --with keyrings.artifacts
 
   # KVM (x64 only, harmless no-op on arm64)
   - modprobe kvm 2>/dev/null || true

@@ -1,11 +1,11 @@
-# AIF CUA Agent Sandbox
+# Quicksand CUA Sandbox
 
-An overlay image package for [quicksand](https://github.com/microsoft/quicksand) that adds browser automation via Playwright and Chromium with a VNC-accessible virtual display. Built on top of `aif-agent-sandbox`.
+An overlay image package for [quicksand](https://github.com/microsoft/quicksand) that adds browser automation via Playwright and Chromium with a VNC-accessible virtual display. Built on top of `quicksand-agent`.
 
 ## Installation
 
 ```bash
-quicksand install aif-cua-agent-sandbox
+quicksand install quicksand-cua
 ```
 
 ## Usage
@@ -14,10 +14,10 @@ quicksand install aif-cua-agent-sandbox
 
 ```python
 import asyncio
-from aif_cua_agent_sandbox import AifCuaAgentSandbox
+from quicksand_cua import CuaSandbox
 
 async def main():
-    async with AifCuaAgentSandbox() as sb:
+    async with CuaSandbox() as sb:
         # Xvfb, x11vnc, and Chromium start automatically via systemd
         result = await sb.execute("python3 -c 'from playwright.sync_api import sync_playwright; print(\"OK\")'")
         print(result.stdout)
@@ -30,13 +30,13 @@ asyncio.run(main())
 ```python
 from quicksand_core import Sandbox
 
-async with Sandbox(image="aif-cua-agent-sandbox", memory="4G", cpus=4) as sb:
+async with Sandbox(image="quicksand-cua", memory="4G", cpus=4) as sb:
     result = await sb.execute("chromium --version")
 ```
 
 ## What's Included
 
-Everything from [aif-agent-sandbox](aif-agent-sandbox) (Python 3.12, uv, requests, pyyaml, ddgs, markitdown), plus:
+Everything from [quicksand-agent](../quicksand-agent) (Python 3.12, uv, requests, pyyaml, ddgs, markitdown), plus:
 
 - **Xvfb** virtual framebuffer (display `:0`, 1280x1024x24)
 - **x11vnc** VNC server on port 5901

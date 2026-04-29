@@ -1,11 +1,11 @@
-# AIF Agent Sandbox
+# Quicksand Agent Sandbox
 
 An overlay image package for [quicksand](https://github.com/microsoft/quicksand) that provides a Python 3.12 environment with common AI agent tools pre-installed. Built on top of `quicksand-ubuntu`.
 
 ## Installation
 
 ```bash
-quicksand install aif-agent-sandbox
+quicksand install quicksand-agent
 ```
 
 ## Usage
@@ -14,10 +14,10 @@ quicksand install aif-agent-sandbox
 
 ```python
 import asyncio
-from aif_agent_sandbox import AIFAgentSandbox
+from quicksand_agent import AgentSandbox
 
 async def main():
-    async with AIFAgentSandbox() as sb:
+    async with AgentSandbox() as sb:
         result = await sb.execute("python3 --version")
         print(result.stdout)
 
@@ -29,7 +29,7 @@ asyncio.run(main())
 ```python
 from quicksand_core import Sandbox
 
-async with Sandbox(image="aif-agent-sandbox", memory="4G", cpus=4) as sb:
+async with Sandbox(image="quicksand-agent", memory="4G", cpus=4) as sb:
     result = await sb.execute("pip list")
 ```
 

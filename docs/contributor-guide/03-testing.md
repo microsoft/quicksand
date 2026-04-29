@@ -3,9 +3,9 @@
 ## Running tests
 
 ```bash
-uv run poe test                # Unit tests (no QEMU needed)
-uv run poe test-integration    # Integration tests (needs QEMU + images)
-uv run poe ci                  # Full CI: check + test
+uv run poe test                  # Unit tests (no QEMU needed)
+uv run poe test:integration      # Integration tests (needs QEMU + images)
+uv run poe ci                    # Full CI: check + test
 
 # Specific file or test
 uv run pytest tests/unit/test_core_config.py

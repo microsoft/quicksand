@@ -2,7 +2,7 @@
 Quicksand QEMU bundles QEMU binaries for the quicksand VM harness.
 
 This package contains pre-built QEMU binaries that work out of the box.
-Install with: pip install quicksand[qemu]
+Install with: pip install quick-sandbox[qemu]
 """
 
 from pathlib import Path

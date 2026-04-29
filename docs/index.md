@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Quicksand
   # text: Full Linux VMs from Python
-  tagline: <span>Launch, control, and snapshot <a href="https://www.qemu.org">QEMU</a> virtual machines through an async Python API. No root, no Docker, no cloud. Just <code>pip install quicksand</code></span>
+  tagline: <span>Launch, control, and snapshot <a href="https://www.qemu.org">QEMU</a> virtual machines through an async Python API. No root, no Docker, no cloud.</span>
   actions:
     - theme: brand
       text: Get Started

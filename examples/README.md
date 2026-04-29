@@ -4,10 +4,10 @@ Each example is a standalone script that can be run directly.
 
 ## Installation
 
-First install the CLI:
+First install quicksand:
 
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
+pip install quick-sandbox
 ```
 
 **For most examples (Ubuntu):**
@@ -28,7 +28,6 @@ quicksand install dev
 **For desktop examples:**
 ```bash
 quicksand install ubuntu-desktop
-quicksand images install ubuntu-desktop
 ```
 
 ## Examples

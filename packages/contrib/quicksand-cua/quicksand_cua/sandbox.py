@@ -10,14 +10,14 @@ from quicksand_core import Sandbox
 from quicksand_core._types import SandboxConfigParams
 
 
-class AifCuaAgentSandbox(Sandbox):
+class CuaSandbox(Sandbox):
     """Pre-configured Sandbox that boots from the bundled overlay.
 
-    Requires aif-agent-sandbox to be installed (the overlay is built on top of it).
+    Requires quicksand-agent to be installed (the overlay is built on top of it).
 
     Usage::
 
-        async with AifCuaAgentSandbox() as sb:
+        async with CuaSandbox() as sb:
             result = await sb.execute("echo hello")
     """
 
@@ -29,7 +29,7 @@ class AifCuaAgentSandbox(Sandbox):
         workspace: str | Path | None = None,
         **kwargs: Unpack[SandboxConfigParams],
     ) -> None:
-        kwargs.setdefault("image", "aif-cua-agent-sandbox")
+        kwargs.setdefault("image", "quicksand-cua")
         super().__init__(
             progress_callback=progress_callback,
             save=save,

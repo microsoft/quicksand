@@ -7,7 +7,7 @@ This package bundles QEMU binaries for the [quicksand](https://github.com/micros
 Install as part of quicksand:
 
 ```bash
-pip install quicksand[qemu]
+pip install quick-sandbox[qemu]
 ```
 
 Or standalone:
@@ -29,7 +29,7 @@ Platform-specific QEMU binaries:
 If you prefer to use your system's QEMU installation, just install quicksand without the `[qemu]` extra:
 
 ```bash
-pip install quicksand[ubuntu]
+pip install quick-sandbox[ubuntu]
 ```
 
 Quicksand will automatically detect QEMU in your PATH.

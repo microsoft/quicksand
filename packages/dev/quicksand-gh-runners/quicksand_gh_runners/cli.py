@@ -171,79 +171,6 @@ def cmd_extend(args: argparse.Namespace) -> None:
             print(f"  {alias}: failed - {result.stderr.strip()}")
 
 
-def cmd_feed_access(_args: argparse.Namespace) -> None:
-    """Register the x64 runner's managed identity in Azure DevOps and grant feed access."""
-    import requests
-
-    if not config.ADO_ORG or not config.ADO_FEED:
-        print("Error: ADO_ORG and ADO_FEED env vars must be set")
-        sys.exit(1)
-
-    client = _get_compute_client()
-    vm = client.virtual_machines.get(config.RESOURCE_GROUP, config.RUNNERS["x64"])
-    if not vm.identity or not vm.identity.principal_id:
-        print("ERROR: quicksand-runner-x64 has no system-assigned managed identity")
-        sys.exit(1)
-    principal_id = vm.identity.principal_id
-    print(f"Managed identity principal ID: {principal_id}")
-
-    credential = DefaultAzureCredential()
-    token = credential.get_token(config.ADO_SCOPE).token
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
-    print(f"Registering service principal in {config.ADO_ORG}...")
-    resp = requests.post(
-        f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/graph/serviceprincipals"
-        f"?api-version=7.1-preview.1",
-        headers=headers,
-        json={"originId": principal_id},
-    )
-    if resp.status_code == 409:
-        print("  Already registered — fetching existing descriptor...")
-        list_resp = requests.get(
-            f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/graph/serviceprincipals"
-            f"?api-version=7.1-preview.1",
-            headers=headers,
-        )
-        list_resp.raise_for_status()
-        sps = list_resp.json().get("value", [])
-        descriptor = next(
-            (sp["descriptor"] for sp in sps if sp.get("originId") == principal_id), None
-        )
-        if not descriptor:
-            print("ERROR: could not find service principal descriptor")
-            sys.exit(1)
-    else:
-        resp.raise_for_status()
-        descriptor = resp.json()["descriptor"]
-    print(f"  Subject descriptor: {descriptor}")
-
-    print("  Resolving identity descriptor...")
-    resp = requests.get(
-        f"https://vssps.dev.azure.com/{config.ADO_ORG}/_apis/identities"
-        f"?subjectDescriptors={descriptor}&api-version=7.1-preview.1",
-        headers=headers,
-    )
-    resp.raise_for_status()
-    identities = resp.json().get("value", [])
-    if not identities:
-        print("ERROR: could not resolve identity descriptor", file=sys.stderr)
-        sys.exit(1)
-    identity_descriptor = identities[0]["descriptor"]
-    print(f"  Identity descriptor: {identity_descriptor}")
-
-    print(f"Granting contributor access to feed '{config.ADO_FEED}'...")
-    resp = requests.patch(
-        f"https://feeds.dev.azure.com/{config.ADO_ORG}/_apis/packaging/feeds/"
-        f"{config.ADO_FEED}/permissions?api-version=7.1-preview.1",
-        headers=headers,
-        json=[{"identityDescriptor": identity_descriptor, "role": 3}],
-    )
-    if not resp.ok:
-        print(f"  ERROR {resp.status_code}: {resp.text}", file=sys.stderr)
-        sys.exit(1)
-    print("  Done.")
-
 
 def cmd_setup(args: argparse.Namespace) -> None:
     """One-time provisioning: create resource group and deploy Bicep."""
@@ -356,11 +283,6 @@ def main() -> int:
     p_setup.add_argument("--ssh-key", help="SSH public key string")
     p_setup.set_defaults(func=cmd_setup)
 
-    p_feed = sub.add_parser(
-        "feed-access",
-        help="Grant runner managed identity access to Azure Artifacts feed",
-    )
-    p_feed.set_defaults(func=cmd_feed_access)
 
     args = parser.parse_args()
     args.func(args)
