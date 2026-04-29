@@ -194,6 +194,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ fromJSON(inputs.plan).publish_environment || null }}
     permissions:
+      actions: read
       contents: read
       id-token: write
     steps:
