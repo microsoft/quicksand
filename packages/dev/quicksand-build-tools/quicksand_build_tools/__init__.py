@@ -162,7 +162,7 @@ class BinaryBundler:
 
         if _platform.system() == "Windows":
             try:
-                import winreg  # ty:ignore[unresolved-attribute]
+                import winreg
 
                 key = winreg.OpenKey(  # ty:ignore[unresolved-attribute]
                     winreg.HKEY_LOCAL_MACHINE,  # ty:ignore[unresolved-attribute]
