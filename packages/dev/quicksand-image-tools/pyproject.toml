@@ -5,9 +5,7 @@ description = "Development tools for quicksand - build custom VM images from Doc
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = [
-    "quicksand-core>=0.11.4.dev0,<0.12.0",
-]
+dependencies = ["quicksand-core>=0.11.5.dev0,<0.12.0"]
 
 [project.scripts]
 quicksand-image-tools = "quicksand_image_tools.cli:main"

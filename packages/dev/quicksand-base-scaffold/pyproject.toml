@@ -4,10 +4,7 @@ version = "0.3.1"
 description = "Template base image package for quicksand"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = [
-    "quicksand-core>=0.11.1,<0.12.0",
-    "tomlkit>=0.13",
-]
+dependencies = ["quicksand-core>=0.11.5.dev0,<0.12.0", "tomlkit>=0.13"]
 
 [project.scripts]
 quicksand-base-scaffold = "quicksand_base_scaffold.scaffold:main"

@@ -33,7 +33,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff" },
     { name = "ty" },
-    { name = "uv-release", specifier = "==0.30.2a0" },
+    { name = "uv-release", specifier = "==0.31.0a2" },
 ]
 
 [[package]]
@@ -1049,7 +1049,7 @@ source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.11.4.dev0"
+version = "0.11.5.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "httpx" },
@@ -1285,7 +1285,7 @@ wheels = [
 
 [[package]]
 name = "uv-release"
-version = "0.30.2a0"
+version = "0.31.0a2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "diny" },
@@ -1296,7 +1296,7 @@ dependencies = [
     { name = "tomlkit" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/7d/0a94d701c4e766182b6b524fa7936882716bf50d542c7b78a67898fd43f8/uv_release-0.30.2a0-py3-none-any.whl", hash = "sha256:be0e0f1f4f067828ca02f6a9d7420d329b60ed2929cd148d3948ffe36496b05c", size = 94297, upload-time = "2026-04-28T16:44:55.607Z" },
+    { url = "https://files.pythonhosted.org/packages/12/f7/198353c94856c4398123a19bf851f95e65fd9f8e35fd8a34a26b1ab5f5e2/uv_release-0.31.0a2-py3-none-any.whl", hash = "sha256:e8a4b4cd59dd0967b9b51856bf0d097adfca0c383d493d6158a4fd3a7a59311a", size = 103090, upload-time = "2026-04-30T16:25:16.454Z" },
 ]
 
 [[package]]

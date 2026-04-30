@@ -5,11 +5,7 @@ description = "Overlay image package for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = [
-    "quicksand-core>=0.11.1,<0.12.0",
-    "quicksand-ubuntu>=0.9.1,<0.10.0",
-    "tomlkit>=0.13",
-]
+dependencies = ["quicksand-core>=0.11.5.dev0,<0.12.0", "quicksand-ubuntu>=0.9.1,<0.10.0", "tomlkit>=0.13"]
 
 [project.scripts]
 quicksand-overlay-scaffold = "quicksand_overlay_scaffold.scaffold:main"
