@@ -1,6 +1,6 @@
 [project]
 name = "quick-sandbox"
-version = "0.11.3.dev0"
+version = "0.11.3"
 description = "A VM harness for AI agents that works on macOS, Linux, and Windows."
 readme = "README.md"
 requires-python = ">=3.11"
