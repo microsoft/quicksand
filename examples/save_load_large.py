@@ -20,7 +20,7 @@ from pathlib import Path
 
 from quicksand import NetworkMode, Sandbox
 
-SAVE_PATH = Path(tempfile.mkdtemp(prefix="quicksand-save-")) / "chromium-env.tar"
+SAVE_PATH = Path(tempfile.mkdtemp(prefix="quicksand-save-")) / "chromium-env"
 
 
 def _stream(**kwargs):

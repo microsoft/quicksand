@@ -2,13 +2,13 @@
 name: new-overlay-image
 description: >
   How to create overlay image packages that layer on top of base images.
-  Use when creating a new overlay package like aif-agent-sandbox, scaffolding
+  Use when creating a new overlay package like quicksand-agent, scaffolding
   an overlay, or modifying hatch_build.py for overlay builds.
 ---
 
 # Creating Overlay Image Packages
 
-Overlay packages (like `aif-agent-sandbox`) boot a base VM, install software, and save the result as an overlay. They're faster to create than base images and layer on top of existing base images.
+Overlay packages (like `quicksand-agent`) boot a base VM, install software, and save the result as an overlay. They're faster to create than base images and layer on top of existing base images.
 
 ## Quick Start
 
@@ -45,7 +45,7 @@ During `uv build`, the `hatch_build.py` hook:
 
 ## hatch_build.py
 
-Reference: `packages/contrib/aif-agent-sandbox/hatch_build.py`
+Reference: `packages/contrib/quicksand-agent/hatch_build.py`
 
 The key function to edit:
 
@@ -66,7 +66,7 @@ The build hook also:
 
 ## Python API (__init__.py)
 
-Reference: `packages/contrib/aif-agent-sandbox/aif_agent_sandbox/__init__.py`
+Reference: `packages/contrib/quicksand-agent/quicksand_agent/__init__.py`
 
 Must export:
 - `image` — `_ImageProvider` instance that resolves the bundled save via `ImageResolver()._resolve_save(IMAGES_DIR)`

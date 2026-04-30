@@ -32,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 - **quicksand-core:** Reverted `quicksand-qemu` from required to optional dependency — the hard dependency broke git-based installs because `quicksand-build-tools` is not published to PyPI
-- **quicksand:** Restored `qemu` optional extra (`pip install quicksand[qemu]`)
+- **quicksand:** Restored `qemu` optional extra (`pip install quick-sandbox[qemu]`)
 
 ## [v0.10.0] - 2026-04-13
 
@@ -60,7 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [v0.9.4] - 2026-04-01
 
 ### Changed
-- **aif-cua-agent-sandbox:** Reduced overlay image size from ~604 MB to ~445 MB by removing unused Playwright headless shell, Vulkan GPU drivers, and system Node.js
+- **quicksand-cua:** Reduced overlay image size from ~604 MB to ~445 MB by removing unused Playwright headless shell, Vulkan GPU drivers, and system Node.js
 
 ### Fixed
 - **quicksand-core:** Virtio-serial agent client now keeps connection open across auth retries — disconnecting caused QEMU to stop accepting new chardev connections
@@ -73,7 +73,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [v0.9.3] - 2026-03-30
 
 ### Added
-- **aif-cua-agent-sandbox:** noVNC web client (port 6080), websockify, socat, and rsync in the overlay image
+- **quicksand-cua:** noVNC web client (port 6080), websockify, socat, and rsync in the overlay image
 
 ### Fixed
 - `quicksand run -p HOST:GUEST` port forward parsing now works correctly
@@ -121,7 +121,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `qemu-img convert -c` preserves backing file references (`-B`) instead of flattening the full chain
 
 ### Added
-- `aif-cua-agent-sandbox` overlay package (first release)
+- `quicksand-cua` overlay package (first release)
 - `_verify_overlay_from_package()` validates that non-session overlays belong to installed packages at save time
 
 ## [v0.6.1] - 2026-03-24

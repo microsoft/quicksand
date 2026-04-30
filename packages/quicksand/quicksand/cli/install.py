@@ -31,6 +31,8 @@ ALIASES: dict[str, list[str]] = {
     "alpine": ["quicksand-alpine"],
     "alpine-desktop": ["quicksand-alpine-desktop"],
     "ubuntu-desktop": ["quicksand-ubuntu-desktop"],
+    "agent": ["quicksand-agent"],
+    "cua": ["quicksand-cua"],
     "dev": ["quicksand-image-tools", "quicksand-overlay-scaffold", "quicksand-base-scaffold"],
     "all": [
         "quicksand-qemu",
@@ -38,6 +40,8 @@ ALIASES: dict[str, list[str]] = {
         "quicksand-alpine",
         "quicksand-alpine-desktop",
         "quicksand-ubuntu-desktop",
+        "quicksand-agent",
+        "quicksand-cua",
     ],
 }
 
@@ -77,7 +81,7 @@ def install(*extras: str, arch: str | None = None) -> None:
 
     Args:
         *extras: One or more extra/package names (e.g. ``"qemu"``, ``"ubuntu"``,
-            ``"all"``, ``"ubuntu@0.4.0"``, ``"aif-agent-sandbox"``).
+            ``"all"``, ``"ubuntu@0.4.0"``, ``"quicksand-agent"``).
         arch: Target architecture (e.g. ``"amd64"``, ``"arm64"``).
             Downloads cross-platform wheels for use with ``quicksand run --arch``.
 
@@ -285,7 +289,11 @@ def _get_latest_release_tag(pkg_name: str) -> str | None:
     )
     if result.returncode != 0:
         return None
-    tags = [t for t in result.stdout.strip().splitlines() if t and not t.endswith("-dev")]
+    tags = [
+        t
+        for t in result.stdout.strip().splitlines()
+        if t and ".dev" not in t and not t.endswith("-base") and not t.endswith("-dev")
+    ]
     return tags[-1] if tags else None
 
 
@@ -353,7 +361,12 @@ def _resolve_compatible_tag(
     prefix = f"{pkg_name}/v"
     pkg_releases: list[tuple[str, str, str]] = []  # (tag, version, date)
     for tag, date in all_releases.items():
-        if tag.startswith(prefix) and not tag.endswith("-dev"):
+        if (
+            tag.startswith(prefix)
+            and ".dev" not in tag
+            and not tag.endswith("-base")
+            and not tag.endswith("-dev")
+        ):
             pkg_releases.append((tag, tag[len(prefix) :], date))
 
     if not pkg_releases:

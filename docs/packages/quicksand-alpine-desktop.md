@@ -1,11 +1,11 @@
 # Quicksand Alpine Desktop
 
-Minimal Alpine Linux 3.21 desktop VM (Xfce4) for the [quicksand](https://github.com/microsoft/quicksand) agent harness. Lightweight and fast-booting. Ideal when you need GUI automation without the overhead of a full Ubuntu desktop.
+Minimal Alpine Linux 3.23 desktop VM (Xfce4) for the [quicksand](https://github.com/microsoft/quicksand) agent harness. Lightweight and fast-booting. Ideal when you need GUI automation without the overhead of a full Ubuntu desktop.
 
 ## Installation
 
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
+pip install quick-sandbox
 quicksand install alpine-desktop
 ```
 
@@ -29,7 +29,7 @@ asyncio.run(main())
 
 ## What's Included
 
-- Alpine 3.21 with Xfce4 desktop + LightDM (auto-login)
+- Alpine 3.23 with Xfce4 desktop + LightDM (auto-login)
 - Chromium browser
 - Python 3, bash, curl
 - The quicksand guest agent (pre-installed)

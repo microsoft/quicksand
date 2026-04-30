@@ -51,5 +51,9 @@ def set_platform_wheel_tag(
     if native_arch == "arm64" and "win_amd64" in platform_tag:
         platform_tag = "win_arm64"
 
+    # PyPI requires manylinux tags for Linux wheels (PEP 600)
+    if platform_tag.startswith("linux_"):
+        platform_tag = platform_tag.replace("linux_", "manylinux_2_17_", 1)
+
     build_data["tag"] = f"py3-none-{platform_tag}"
     return True

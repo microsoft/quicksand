@@ -1,0 +1,31 @@
+[project]
+name = "quicksand-agent"
+version = "0.4.0"
+description = "Overlay image package for quicksand"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["quicksand-core>=0.11.5,<0.12.0", "quicksand-ubuntu>=0.9.2,<0.10.0"]
+
+
+[build-system]
+requires = ["hatchling", "quicksand-image-tools>=0.5.0,<0.6.0", "quicksand-core>=0.11.0,<0.12.0", "quicksand-ubuntu>=0.9.0,<0.10.0", "quicksand-qemu>=0.5.0,<0.6.0", "quicksand-smb>=0.4.0,<0.5.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["quicksand_agent"]
+artifacts = [
+    "quicksand_agent/images/manifest.json",
+    "quicksand_agent/images/overlays/*.qcow2",
+]
+
+[project.entry-points."quicksand.images"]
+quicksand-agent = "quicksand_agent:image"
+
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.uv.sources]
+quicksand-core = { workspace = true }
+quicksand-qemu = { workspace = true }
+quicksand-ubuntu = { workspace = true }

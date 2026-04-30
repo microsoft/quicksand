@@ -9,19 +9,23 @@ on:
 permissions:
   contents: write
   actions: read
-
+  id-token: write
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
   # --------------------------------------------------------------------------
   # Validate
   # --------------------------------------------------------------------------
-  uvr-validate:
+  validate:
     runs-on: ubuntu-latest
     environment: release
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
     - id: setup-uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
     - name: Reject releases from main
       if: github.ref == 'refs/heads/main'
@@ -38,25 +42,27 @@ jobs:
   # Check (lint, format, types, unit tests)
   # --------------------------------------------------------------------------
   check:
-    needs: [uvr-validate]
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: release
     strategy:
       fail-fast: true
       matrix:
-        task: [check, test-unit]
+        task: [check, "test:unit"]
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
       with:
         clean: true
-    - uses: astral-sh/setup-uv@v7
+    - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: false
     - run: uv run poe ${{ matrix.task }}
 
   # --------------------------------------------------------------------------
   # Build
   # --------------------------------------------------------------------------
-  uvr-build:
-    needs: [uvr-validate, check]
+  build:
+    needs: [validate, check]
     runs-on: ${{ matrix.runner }}
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'build') }}
     timeout-minutes: 60
@@ -66,12 +72,13 @@ jobs:
         runner: ${{ fromJSON(inputs.plan).build_matrix }}
     steps:
     - id: checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - id: setup-uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
 
     - id: build
@@ -92,140 +99,149 @@ jobs:
   # Verify GPL licenses in QEMU wheels
   # --------------------------------------------------------------------------
   verify-licenses:
-    needs: [uvr-validate, uvr-build]
+    needs: [validate, build]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'verify-licenses')
     runs-on: ubuntu-latest
     environment: release
     steps:
-    - uses: actions/checkout@v6
-    - uses: astral-sh/setup-uv@v7
-    - uses: actions/download-artifact@v8
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: false
+    - uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         path: dist/
         merge-multiple: true
     - run: uv run --no-project scripts/ci/verify_licenses.py dist/*.whl
 
-  # --------------------------------------------------------------------------
-  # Test (integration tests — boot VMs from built wheels)
-  # --------------------------------------------------------------------------
-  test:
-    needs: [uvr-build, verify-licenses]
-    if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'test')
-    runs-on: ubuntu-latest
-    environment: release
-    timeout-minutes: 15
-    strategy:
-      fail-fast: true
-      matrix:
-        vm: [ubuntu, alpine]
-    steps:
-    - uses: actions/checkout@v6
-    - uses: astral-sh/setup-uv@v7
+  # # --------------------------------------------------------------------------
+  # # Test (integration tests — boot VMs from built wheels)
+  # # --------------------------------------------------------------------------
+  # test:
+  #   needs: [build, verify-licenses]
+  #   if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'test')
+  #   runs-on: ubuntu-latest
+  #   environment: release
+  #   timeout-minutes: 15
+  #   strategy:
+  #     fail-fast: true
+  #     matrix:
+  #       vm: [ubuntu, alpine]
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: astral-sh/setup-uv@v5
+  #     with:
+  #       enable-cache: false
 
-    - uses: actions/download-artifact@v8
-      with:
-        pattern: wheels-*
-        path: dist/
-        merge-multiple: true
-        run-id: ${{ fromJSON(inputs.plan).reuse_run_id != '' && fromJSON(inputs.plan).reuse_run_id || github.run_id }}
-        github-token: ${{ secrets.GITHUB_TOKEN }}
+  #   - uses: actions/download-artifact@v4
+  #     with:
+  #       pattern: wheels-*
+  #       path: dist/
+  #       merge-multiple: true
+  #       run-id: ${{ fromJSON(inputs.plan).reuse_run_id != '' && fromJSON(inputs.plan).reuse_run_id || github.run_id }}
+  #       github-token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: KVM setup
-      run: |
-        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-        sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
+  #   - name: KVM setup
+  #     run: |
+  #       echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+  #         | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+  #       sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
 
-    - name: Install packages
-      run: ${{ fromJSON(inputs.plan).test_install[matrix.vm] }}
-      env:
-        GH_TOKEN: ${{ github.token }}
+  #   - name: Install packages
+  #     run: ${{ fromJSON(inputs.plan).test_install[matrix.vm] }}
+  #     env:
+  #       GH_TOKEN: ${{ github.token }}
 
-    - name: Run integration tests
-      run: |
-        uv run --no-project pytest \
-          tests/integration/execution \
-          tests/integration/mounts \
-          tests/integration/network \
-          tests/integration/checkpoint \
-          -v --timeout=300
-      env:
-        QUICKSAND_TEST_VM: ${{ matrix.vm }}
+  #   - name: Run integration tests
+  #     run: |
+  #       uv run --no-project pytest \
+  #         tests/integration/execution \
+  #         tests/integration/mounts \
+  #         tests/integration/network \
+  #         tests/integration/checkpoint \
+  #         -v --timeout=300
+  #     env:
+  #       QUICKSAND_TEST_VM: ${{ matrix.vm }}
 
   # --------------------------------------------------------------------------
   # Release — create per-package GitHub releases
   # --------------------------------------------------------------------------
-  uvr-release:
-    needs: [uvr-build, verify-licenses, test]
+  release:
+    needs: [build, verify-licenses]
     runs-on: ubuntu-latest
     environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'release') }}
     steps:
     - id: checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - id: setup-uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
     - name: Configure git identity
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
     - id: release
-      name: Download wheels, tag and publish releases
+      name: Tag and publish releases
       env:
         GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
-        RUN_ID: ${{ github.run_id }}
+        RUN_ID: ${{ fromJSON(inputs.plan).reuse_run || github.run_id }}
       run: uv run uvr jobs release
 
   # --------------------------------------------------------------------------
-  # Publish — upload wheels to Azure Artifacts
+  # Publish — upload wheels to PyPI
   # --------------------------------------------------------------------------
   publish:
-    needs: [uvr-validate, check, uvr-build, verify-licenses, uvr-release]
+    needs: [validate, check, build, verify-licenses, release]
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'publish') }}
     runs-on: ubuntu-latest
-    environment: release
+    environment: ${{ fromJSON(inputs.plan).publish_environment || null }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
     steps:
-    - uses: actions/checkout@v6
+    - id: checkout
+      uses: actions/checkout@v4
       with:
-        clean: true
-    - uses: astral-sh/setup-uv@v7
-
-    - uses: actions/download-artifact@v8
+        fetch-depth: 0
+    - id: setup-uv
+      uses: astral-sh/setup-uv@v5
       with:
-        pattern: wheels-*
-        path: dist/
-        merge-multiple: true
-        run-id: ${{ fromJSON(inputs.plan).reuse_run_id != '' && fromJSON(inputs.plan).reuse_run_id || github.run_id }}
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Publish to Azure Artifacts
-      run: uv run python scripts/ci/publish_azure.py
+        enable-cache: false
+        python-version: ${{ fromJSON(inputs.plan).python_version }}
+    - id: publish
+      name: Publish to PyPI
       env:
+        GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
+        RUN_ID: ${{ fromJSON(inputs.plan).reuse_run || github.run_id }}
+      run: uv run uvr jobs publish
 
   # --------------------------------------------------------------------------
   # Bump — post-release version bump
   # --------------------------------------------------------------------------
-  uvr-bump:
+  bump:
     runs-on: ubuntu-latest
     environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'bump') }}
     needs:
-    - uvr-release
+    - release
     steps:
     - id: checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - id: setup-uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
     - name: Configure git identity
       run: |

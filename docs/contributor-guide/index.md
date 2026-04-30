@@ -32,7 +32,7 @@ uv run poe fix && uv run poe check
 | `uv run poe fix` | Auto-fix lint + formatting |
 | `uv run poe check` | Lint + format check + type check |
 | `uv run poe test` | Unit tests (no QEMU needed) |
-| `uv run poe test-integration` | Integration tests (needs QEMU + images) |
-| `uv run poe test-smb` | SMB server unit tests |
+| `uv run poe test:integration` | Integration tests (needs QEMU + images) |
+| `uv run poe test:smb` | SMB server unit tests |
 | `uv run poe ci` | Full CI: check + test |
 

@@ -94,13 +94,13 @@ asyncio.run(main())
 - `pyproject.toml` registers the `quicksand.images` entry point
 - `hatch_build.py` builds the image during `uv build`
 
-Reference: `packages/quicksand-ubuntu/` for a complete example.
+Reference: `packages/contrib/quicksand-ubuntu/` for a complete example.
 
 ---
 
 ## Overlay images
 
-Overlay packages (like `aif-agent-sandbox`) boot a base VM, run setup commands, and save the result. They layer on top of existing base images and can stack on each other.
+Overlay packages (like `quicksand-agent`) boot a base VM, run setup commands, and save the result. They layer on top of existing base images and can stack on each other.
 
 ### Scaffold
 
@@ -108,7 +108,7 @@ Overlay packages (like `aif-agent-sandbox`) boot a base VM, run setup commands, 
 quicksand dev scaffold overlay my-overlay --base ubuntu
 ```
 
-`--base` is required. It specifies which image the overlay builds on. This can be a base image (`ubuntu`, `alpine`) or another overlay (`aif-agent-sandbox`). Stacking overlays is encouraged because each layer only stores its own changes, keeping wheel sizes small.
+`--base` is required. It specifies which image the overlay builds on. This can be a base image (`ubuntu`, `alpine`) or another overlay (`quicksand-agent`). Stacking overlays is encouraged because each layer only stores its own changes, keeping wheel sizes small.
 
 Creates `my-overlay/` in the current directory. Use `--output-dir` to override. In Claude Code, `/new-overlay-image` wraps this interactively.
 
@@ -139,7 +139,7 @@ The first build boots a real VM, runs `_setup()`, and saves the overlay. Subsequ
 - `__init__.py` exports `image` (ImageProvider)
 - `pyproject.toml` registers entry points and declares the base image dependency
 
-Reference: `packages/contrib/aif-agent-sandbox/` for a complete example.
+Reference: `packages/contrib/quicksand-agent/` for a complete example.
 
 ---
 

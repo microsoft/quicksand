@@ -162,7 +162,7 @@ class BinaryBundler:
 
         if _platform.system() == "Windows":
             try:
-                import winreg  # ty:ignore[unresolved-attribute]
+                import winreg
 
                 key = winreg.OpenKey(  # ty:ignore[unresolved-attribute]
                     winreg.HKEY_LOCAL_MACHINE,  # ty:ignore[unresolved-attribute]
@@ -174,6 +174,10 @@ class BinaryBundler:
                     platform_tag = "win_arm64"
             except Exception:
                 pass
+
+        # PyPI requires manylinux tags for Linux wheels (PEP 600)
+        if platform_tag.startswith("linux_"):
+            platform_tag = platform_tag.replace("linux_", "manylinux_2_17_", 1)
 
         build_data["tag"] = f"py3-none-{platform_tag}"
 

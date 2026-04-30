@@ -62,7 +62,7 @@ quicksand run mylinux
 
 ## Dockerfile Example
 
-See `packages/quicksand-ubuntu/quicksand_ubuntu/docker/Dockerfile` for a complete Ubuntu example, or `packages/quicksand-alpine/quicksand_alpine/docker/Dockerfile` for Alpine.
+See `packages/contrib/quicksand-ubuntu/quicksand_ubuntu/docker/Dockerfile` for a complete Ubuntu example, or `packages/contrib/quicksand-alpine/quicksand_alpine/docker/Dockerfile` for Alpine.
 
 The key pattern is a multi-stage build:
 

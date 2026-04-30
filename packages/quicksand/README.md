@@ -1,108 +1,184 @@
 # Quicksand
 
-Quicksand is a VM harness for AI agents that works on macOS, Linux, and Windows.
+[![PyPI](https://img.shields.io/pypi/v/quick-sandbox)](https://pypi.org/project/quick-sandbox/)
+[![Docs](https://img.shields.io/badge/docs-quicksand-blue)](https://microsoft.github.io/quicksand/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## Quick Start
+![Quicksand](docs/banner-light.png)
 
-**1. Install quicksand CLI**
+Quicksand is an async Python API to launch, control, and snapshot [QEMU](https://www.qemu.org) virtual machines with a particular focus on sandboxing AI agents. Quicksand provides pre-built Linux VMs for Ubuntu and Alpine distros. It works on x86_64 and ARM64 across macOS, Linux, and Windows with no root privileges, no Docker, and no system dependencies. Just `pip install quick-sandbox`.
 
-```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
-```
-
-**2. Install a sandbox**
+## Installation
 
 ```bash
-quicksand install ubuntu  # Ubuntu 24.04 (~300MB)
-quicksand install alpine  # Alpine 3.21 (~75MB, faster boot)
+pip install 'quick-sandbox[qemu,alpine]'
 ```
 
-**3. Run the sandbox in python**
+Or install the core package and add QEMU/images separately:
+
+```bash
+pip install quick-sandbox
+quicksand install qemu alpine
+```
+
+## Usage
+
+### Hello, World!
 
 ```python
 import asyncio
-from quicksand import UbuntuSandbox
+from quicksand import Sandbox
 
 async def main():
-    async with UbuntuSandbox() as sb:
+    async with Sandbox(image="ubuntu") as sb:
         result = await sb.execute("echo 'Hello from the sandbox!'")
         print(result.stdout)
 
 asyncio.run(main())
 ```
 
-That's it. Docker? Don't need it. WSL2? Nope. Batteries? Included.
-
-## Usage
+### Run commands
 
 ```python
-import asyncio
-from quicksand import Sandbox, Mount, NetworkMode
-
-async def main():
-    async with Sandbox(
-        image="ubuntu",
-        mounts=[Mount("./workspace", "/mnt/workspace")],
-        network_mode=NetworkMode.FULL,  # Full internet access
-    ) as sb:
-        await sb.execute("pip install requests")
-        await sb.execute("python /mnt/workspace/script.py")
-        print((await sb.execute("cat /tmp/output.txt")).stdout)
-        await sb.save("./my-save")  # Save disk state, VM keeps running
-
-asyncio.run(main())
+result = await sb.execute("apt update && apt install -y python3")
+print(result.stdout, result.exit_code)
 ```
 
-See [examples/](examples/) for more. For implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+### Mount host directories
 
-## How It Works
+Share host directories into the VM at boot or on the fly.
 
-```mermaid
-graph LR
-    subgraph Host["Host"]
-        HostFiles["Host Files"]
-        subgraph Process["Python Process"]
-            Code["Your Code"]
-            subgraph SB["quicksand.Sandbox"]
-                TCP["TCP Client"]
-                FileSync["FileSync (SMB/CIFS)"]
-            end
-        end
-        subgraph QEMU["QEMU Process (bundled)"]
-            subgraph Accel["KVM / HVF / WHPX (host)"]
-                subgraph VM["Linux VM (bundled)"]
-                    Agent["quicksand-guest-agent"]
-                    Mount["/mnt/data"]
-                end
-            end
-        end
-    end
+```python
+# At boot
+async with Sandbox(
+    image="ubuntu",
+    mounts=[Mount("./workspace", "/mnt/workspace")],
+) as sb:
+    ...
 
-    Code <-->|".execute"| SB
-    SB -->|launches| QEMU
-    TCP <-->|commands| Agent
-    HostFiles <--> FileSync
-    FileSync <-.->|sync| Mount
+# Or dynamically on a running sandbox
+handle = await sb.mount("/tmp/data", "/mnt/data")
+await sb.execute("ls /mnt/data")
+await sb.unmount(handle)
 ```
 
-Each sandbox runs in a real virtual machine with hypervisor-level isolation:
+### Configure networking
 
-| Platform | Accelerator | Machine | File Sharing | Performance |
-|----------|-------------|---------|--------------|-------------|
-| Linux x86_64 | KVM | q35 | SMB/CIFS | io_uring + IOThreads |
-| Linux ARM64 | KVM | virt | SMB/CIFS | io_uring + IOThreads |
-| macOS | HVF | q35/virt | SMB/CIFS | IOThreads |
-| Windows | WHPX | q35 | SMB/CIFS | IOThreads |
+Sandboxes are network-isolated by default. Opt in to internet access and port forwarding with `NetworkMode.FULL`.
 
-Key components:
-- **Bundled QEMU**: No system installation required
-- **Guest agent**: Lightweight TCP server for command execution
-- **Disposable overlays**: Base image unchanged, writes go to temp overlay
-- **SMB/CIFS mounts**: Mount host directories into the VM
-- **Platform optimizations**: io_uring (~50% lower disk latency), IOThreads
+```python
+async with Sandbox(
+    image="ubuntu",
+    network_mode=NetworkMode.FULL,
+    port_forwards=[PortForward(host=8080, guest=80)],
+) as sb:
+    ...
+```
 
-## Requirements
+### Save and load
 
-- Python 3.11+
-- No system dependencies (QEMU is bundled)
-- For custom images: Docker
+Save the VM's disk state to a directory. Load it later, even on a different machine.
+
+```python
+await sb.execute("pip install numpy pandas")
+await sb.save("my-env")  # VM keeps running
+
+# Load later
+async with Sandbox(image="my-env") as sb:
+    await sb.execute("python3 -c 'import numpy; print(numpy.__version__)'")
+```
+
+
+### Checkpoint and revert
+
+Capture the full VM state and roll back if something goes wrong.
+
+```python
+await sb.checkpoint("before-experiment")
+await sb.execute("apt install -y something-risky")
+await sb.revert("before-experiment")  # the VM snaps back to the checkpoint
+```
+
+### Control a desktop
+
+Desktop images provide a full Xfce4 graphical environment with a browser. Install one with `quicksand install ubuntu-desktop` or `quicksand install alpine-desktop`.
+
+```python
+async with Sandbox(image="ubuntu-desktop", enable_display=True) as sb:
+    await sb.screenshot("screen.png")
+    await sb.type_text("hello world")
+    await sb.press_key(Key.RET)
+    await sb.mouse_move(500, 300)
+    await sb.mouse_click("left")
+```
+
+### Configuration
+
+Here are all of the Sandbox configuration options:
+
+```python
+Sandbox(
+    # Image or save name to boot
+    image="ubuntu",
+    # Guest RAM (default: "512M")
+    memory="2G",
+    # Virtual CPU cores (default: 1)
+    cpus=4,
+    # Host directories shared into the VM at boot
+    mounts=[Mount("/host", "/guest")],
+    # NONE, MOUNTS_ONLY (default), or FULL internet access
+    network_mode=NetworkMode.FULL,
+    # Forward host TCP ports into the guest
+    port_forwards=[PortForward(host=8080, guest=80)],
+    # Expand the guest filesystem on boot
+    disk_size="10G",
+    # Attach virtual GPU, keyboard, and mouse for screenshot/type_text/mouse control
+    enable_display=True,
+    # Auto-save VM state on stop
+    save="my-save-name",
+)
+```
+
+## Available images
+
+| Image | Type | Wheel size | Install command | What is it |
+|-------|------|-----------|-----------------|------------|
+| `ubuntu` | Base | ~341 MB | `quicksand install ubuntu` | Ubuntu 24.04 headless |
+| `alpine` | Base | ~78 MB | `quicksand install alpine` | Alpine 3.23 headless (faster boot) |
+| `ubuntu-desktop` | Overlay (`ubuntu`) | ~263 MB | `quicksand install ubuntu-desktop` | Ubuntu 24.04 + Xfce4 + Firefox |
+| `alpine-desktop` | Overlay (`alpine`) | ~310 MB | `quicksand install alpine-desktop` | Alpine 3.23 + Xfce4 + Chromium |
+| `quicksand-agent` | Overlay (`ubuntu`) | ~304 MB | `quicksand install quicksand-agent` | Ubuntu + Python 3.12, uv, build-essential, requests, pyyaml, ddgs, markitdown |
+| `quicksand-cua` | Overlay (`quicksand-agent`) | ~445 MB | `quicksand install quicksand-cua` | Agent Sandbox + Xvfb, x11vnc, noVNC, Playwright, Chromium |
+
+## Building from source
+
+```bash
+git clone git@github.com:microsoft/quicksand.git
+cd quicksand
+uv sync
+uv run uvr build --all-packages
+```
+
+## Documentation
+
+| Topic | Guide | Under the Hood |
+|-------|-------|----------------|
+| Installation | [Installing packages](docs/user-guide/01-installation.md) | [QEMU binaries, kernels, qcow2 disks](docs/under-the-hood/01-installation.md) |
+| Sandbox Lifecycle | [Creating and configuring sandboxes](docs/user-guide/02-sandbox-lifecycle.md) | [`-m`, `-smp`, `-accel`, machine types](docs/under-the-hood/02-sandbox-lifecycle.md) |
+| Running Commands | [`execute()`, streaming, exit codes](docs/user-guide/03-running-commands.md) | [Kernel boot, agent tokens, `hostfwd`](docs/under-the-hood/03-running-commands.md) |
+| File Exchange | [Mounts, hot-mounts, getting data in/out](docs/user-guide/04-file-exchange.md) | [CIFS via `guestfwd`, 9p via `-fsdev`](docs/under-the-hood/04-file-exchange.md) |
+| Save and Rollback | [Checkpoints, reverts, persistent saves](docs/user-guide/05-save-and-rollback.md) | [qcow2 overlays, `savevm`, `blockdev-snapshot-sync`](docs/under-the-hood/05-save-and-rollback.md) |
+| Desktop Control | [Screenshots, keyboard, mouse](docs/user-guide/06-desktop-control.md) | [VNC, GPU, USB tablet, QMP input injection](docs/under-the-hood/06-desktop-control.md) |
+| Network and Isolation | [Network modes, port forwarding](docs/user-guide/07-network-and-isolation.md) | [SLIRP NAT, `restrict=on`, `guestfwd`](docs/under-the-hood/07-network-and-isolation.md) |
+| Performance | [What makes it fast](docs/user-guide/08-performance.md) | [`io_uring`, IOThreads, TCG vs KVM](docs/under-the-hood/08-performance.md) |
+
+### Contributing
+
+| Guide | When to use |
+|-------|------------|
+| [Creating Images](docs/contributor-guide/01-creating-images.md) | Build a new base or overlay image package |
+| [Extending the Sandbox](docs/contributor-guide/02-extending-the-sandbox.md) | Add a method, OS, architecture, or QEMU flag |
+| [Testing](docs/contributor-guide/03-testing.md) | Run or write tests |
+| [Releasing](docs/contributor-guide/04-releasing.md) | Cut a release |
+
+Full guides: [User Guide](docs/user-guide/) | [Under the Hood](docs/under-the-hood/) | [Contributor Guide](docs/contributor-guide/)

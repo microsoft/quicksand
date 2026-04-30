@@ -4,17 +4,10 @@ This package provides development tools for building custom VM images for the [q
 
 ## Installation
 
-Install quicksand CLI first:
-
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
-```
-
-```bash
+pip install quick-sandbox
 quicksand install dev
 ```
-
-This installs quicksand with the Ubuntu image and dev tools for building custom images.
 
 ## CLI Usage
 

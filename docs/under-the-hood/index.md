@@ -89,13 +89,13 @@ packages/
 │   ├── quicksand-overlay-scaffold/ # Scaffolding for new overlay image packages
 │   └── quicksand-gh-runners/    # GitHub Actions self-hosted runner config
 ├── contrib/                # Community/team image packages
-│   ├── aif-agent-sandbox/      # Ubuntu + Python 3.12, uv, build tools
-│   └── aif-cua-agent-sandbox/  # AIF Agent Sandbox + Playwright, Chromium
+│   ├── quicksand-agent/      # Ubuntu + Python 3.12, uv, build tools
+│   └── quicksand-cua/  # Agent Sandbox + Playwright, Chromium
 ├── quicksand/               # User-facing wrapper (re-exports core + images)
 ├── quicksand-ubuntu/        # Bundled Ubuntu 24.04 image
-├── quicksand-alpine/        # Bundled Alpine 3.21 image
+├── quicksand-alpine/        # Bundled Alpine 3.23 image
 ├── quicksand-ubuntu-desktop/# Ubuntu 24.04 + Xfce4 desktop image
-└── quicksand-alpine-desktop/# Alpine 3.21 + Xfce4 desktop image
+└── quicksand-alpine-desktop/# Alpine 3.23 + Xfce4 desktop image
 ```
 
 **quicksand-core** — fundamental implementation. `Sandbox` class, host platform detection (`host/`), QEMU-specific subsystems (`qemu/`), and general utilities (`utils/`). No hard dependency on `quicksand-qemu`. QEMU binaries are located at runtime via `quicksand_qemu.get_bin_dir()` with a fallback to system QEMU.
@@ -488,8 +488,8 @@ Images are installed via the `quicksand install` CLI, which downloads platform-s
 ```bash
 quicksand install qemu            # bundled QEMU binaries
 quicksand install ubuntu          # Ubuntu 24.04 headless
-quicksand install alpine          # Alpine 3.21 headless
-quicksand install alpine-desktop  # Alpine 3.21 + Xfce4
+quicksand install alpine          # Alpine 3.23 headless
+quicksand install alpine-desktop  # Alpine 3.23 + Xfce4
 quicksand install ubuntu-desktop  # Ubuntu 24.04 + Xfce4
 quicksand install all             # everything (QEMU + all images + dev tools)
 ```

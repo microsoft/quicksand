@@ -65,4 +65,5 @@ class TestQuicksandExports:
         import quicksand
 
         assert hasattr(quicksand, "__version__")
-        assert quicksand.__version__ == "0.1.0"
+        assert isinstance(quicksand.__version__, str)
+        assert len(quicksand.__version__) > 0

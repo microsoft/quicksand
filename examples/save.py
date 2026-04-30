@@ -32,8 +32,8 @@ async def main():
         await sandbox.execute("pip install requests --break-system-packages")
 
         # Save for next time (writes to .quicksand/sandboxes/my-save/)
-        info = await sandbox.save("my-save")
-        print(f"Saved: {info.version} bytes")
+        await sandbox.save("my-save")
+        print(f"Saved to {save_path}")
 
     # Use the sandbox (setup already done if loaded from save)
     result = await sandbox.execute("python3 -c 'import requests; print(requests.__version__)'")

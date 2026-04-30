@@ -2,7 +2,6 @@
 # Individual packages are in packages/
 
 [tool.uv]
-keyring-provider = "subprocess"
 override-dependencies = ["httpx>=0.27,<1"]
 constraint-dependencies = ["setuptools>=78.1.1"]
 
@@ -13,23 +12,19 @@ exclude = ["packages/dev", "packages/contrib"]
 [[tool.uv.index]]
 name = "pypi"
 url = "https://pypi.org/simple"
+publish-url = "https://upload.pypi.org/legacy/"
 default = true
 
-[[tool.uv.index]]
-name = "azure-msraif"
-url = "https://VssSessionToken@pkgs.dev.azure.com/msraif/_packaging/packages/pypi/simple/"
-explicit = true
-
 [tool.uvr.config]
-latest = "quicksand"
+latest = "quick-sandbox"
 exclude = ["quicksand-gh-runners"]
-workflow_version = "0.28.1"
+workflow_version = "0.30.2a0"
 skill_version = "0.27.1a3"
 
 [tool.uvr.runners]
-aif-agent-sandbox = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
-aif-cua-agent-sandbox = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
-quicksand = [["self-hosted", "linux", "x64"]]
+quicksand-agent = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quicksand-cua = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quick-sandbox = [["self-hosted", "linux", "x64"]]
 quicksand-alpine = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
 quicksand-alpine-desktop = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
 quicksand-base-scaffold = [["self-hosted", "linux", "x64"]]
@@ -40,6 +35,14 @@ quicksand-qemu = [["windows-latest"], ["self-hosted", "linux", "x64"], ["self-ho
 quicksand-smb = [["self-hosted", "linux", "x64"]]
 quicksand-ubuntu = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
 quicksand-ubuntu-desktop = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quicksand-build-tools = [["self-hosted", "linux", "x64"]]
+
+[tool.uvr.publish]
+index = "pypi"
+environment = "pypi"
+trusted-publishing = "automatic"
+include = []
+exclude = []
 [tool.uv.sources]
 quicksand = { workspace = true }
 quicksand-core = { workspace = true }
@@ -64,39 +67,36 @@ dev = [
     "pytest-asyncio",
     "pytest-timeout",
     "hatchling",
-    "twine",
-    "keyring",
-    "keyrings.artifacts",
-    "uv-release==0.30.2a0",
+    "uv-release==0.31.0a2",
+    "pre-commit>=4.6.0",
 ]
 
 [tool.poe.tasks]
-check = ["check-code", "check-format", "check-types"]
-check-code = "ruff check ."
-check-format = "ruff format --check ."
-check-types = "ty check ."
-fix = ["fix-format", "fix-code"]
-fix-format = "ruff format ."
-fix-code = "ruff check --fix --unsafe-fixes ."
-test = "pytest tests/ -x -v --timeout=120 -m 'not docker'"
-test-smb = "pytest tests/unit/smb/ -v --timeout=30"
-release-dry-run = "quicksand-plan-release --format summary"
-release-plan = "quicksand-plan-release"
-test-unit = "pytest tests/unit -v --timeout=60"
-test-integration = "pytest tests/integration -v --timeout=300"
-test-integration-execution = "pytest tests/integration/execution -v --timeout=300"
-test-integration-mounts-readonly = "pytest tests/integration/mounts/readonly -v --timeout=300"
-test-integration-mounts-readwrite = "pytest tests/integration/mounts/readwrite -v --timeout=300"
-test-integration-mounts-multiple = "pytest tests/integration/mounts/multiple -v --timeout=300"
-test-integration-network-unrestricted = "pytest tests/integration/network/unrestricted -v --timeout=300"
-test-integration-checkpoint = "pytest tests/integration/checkpoint -v --timeout=300"
-test-integration-dev = "pytest tests/integration/dev -v --timeout=600 -m docker"
-test-all = "pytest tests/ -x -v --timeout=120"
-ci = ["check-code", "check-format", "check-types", "test"]
+check = ["check:code", "check:format", "check:types"]
+"check:code" = "ruff check ."
+"check:format" = "ruff format --check ."
+"check:types" = "ty check ."
+fix = ["fix:format", "fix:code"]
+"fix:format" = "ruff format ."
+"fix:code" = "ruff check --fix --unsafe-fixes ."
+"test:unit" = "pytest tests/unit -v --timeout=60"
+"test:smb" = "pytest tests/unit/smb/ -v --timeout=30"
+"test:integration" = "pytest tests/integration -v --timeout=300"
+"test:integration-execution" = "pytest tests/integration/execution -v --timeout=300"
+"test:integration-mounts-readonly" = "pytest tests/integration/mounts/readonly -v --timeout=300"
+"test:integration-mounts-readwrite" = "pytest tests/integration/mounts/readwrite -v --timeout=300"
+"test:integration-mounts-multiple" = "pytest tests/integration/mounts/multiple -v --timeout=300"
+"test:integration-network-unrestricted" = "pytest tests/integration/network/unrestricted -v --timeout=300"
+"test:integration-checkpoint" = "pytest tests/integration/checkpoint -v --timeout=300"
+"test:integration-dev" = "pytest tests/integration/dev -v --timeout=600 -m docker"
+"test:no-docker" = "pytest tests/ -x -v --timeout=120 -k 'not docker'"
+"test" = "pytest tests/ -x -v --timeout=120"
+ci = ["check:code", "check:format", "check:types", "test:no-docker"]
 clean = "python scripts/clean.py"
-docs-dev = { shell = "npx vitepress dev docs" }
-docs-build = { shell = "npx vitepress build docs" }
-docs-preview = { shell = "npx vitepress preview docs" }
+"docs:dev" = { shell = "npx vitepress dev docs" }
+"docs:build" = { shell = "npx vitepress build docs" }
+"docs:preview" = { shell = "npx vitepress preview docs" }
+build = "uv run uvr build --rebuild-all"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -106,6 +106,7 @@ asyncio_default_test_loop_scope = "module"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = ["gha-runners", "deps", "dist"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
@@ -115,5 +116,5 @@ python-version = "3.11"
 extra-paths = ["scripts"]
 
 [tool.ty.src]
-# Scripts meant to run inside sandboxes, not the host
+include = ["packages", "scripts", "tests", "examples"]
 exclude = ["examples/playwright_vnc/browser_script.py"]

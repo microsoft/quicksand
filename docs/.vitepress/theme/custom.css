@@ -44,3 +44,137 @@
 
   --vp-home-hero-name-color: #FFB900;
 }
+
+/* Full-bleed banner background */
+.home-banner {
+  position: fixed;
+  top: var(--vp-nav-height);
+  left: 0;
+  width: 100%;
+  aspect-ratio: 2172 / 724;
+  background: url('/banner-light.png') top center / 100% 100% no-repeat;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.dark .home-banner {
+  background-image: url('/banner-dark.png');
+}
+
+/* Scroll-driven blur overlay that fades to opaque by 30% scroll */
+.home-blur-overlay {
+  position: fixed;
+  top: var(--vp-nav-height);
+  left: 0;
+  width: 100%;
+  aspect-ratio: 2172 / 724;
+  z-index: 0;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: var(--vp-c-bg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Push content below the banner image */
+.home-page .VPContent {
+  position: relative;
+  z-index: 1;
+  margin-top: calc(33.33vw - var(--vp-nav-height)) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 100px);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 100px);
+}
+
+.dark .home-page .VPContent {
+  background: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Hero image slot — make container fill and center content */
+.VPHero .image-container,
+.VPHero .image-bg,
+.VPHero .image {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: auto !important;
+  max-width: 100% !important;
+}
+
+.hero-install {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  padding: 24px;
+}
+
+.hero-install pre {
+  background: var(--vp-c-bg-soft);
+  border: 2px solid var(--vp-c-brand-1);
+  border-radius: 12px;
+  padding: 24px 32px;
+  font-size: clamp(0.8em, 2.5vw, 1.3em);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.hero-install code {
+  color: var(--vp-c-brand-3);
+}
+
+.dark .hero-install pre {
+  background: var(--vp-c-brand-soft);
+}
+
+.dark .hero-install code {
+  color: var(--vp-c-brand-1);
+}
+
+.hero-install .prompt {
+  color: var(--vp-c-text-3);
+  user-select: none;
+}
+
+/* Force navbar background on home page (override VitePress transparent-on-home default) */
+.home-page .VPNavBar:not(.has-sidebar) {
+  background-color: var(--vp-nav-bg-color) !important;
+  border-bottom: 1px solid var(--vp-c-gutter) !important;
+}
+
+/* Hide hero image slot on smaller screens where it stacks above text */
+@media (max-width: 960px) {
+  .VPHero .image {
+    display: none !important;
+  }
+}
+
+/* Disable parallax/blur on mobile, keep banner as static background */
+@media (max-width: 768px) {
+  .home-banner {
+    position: absolute;
+    z-index: 1;
+  }
+
+  .home-page {
+    overflow: visible;
+  }
+
+  .home-blur-overlay {
+    display: none;
+  }
+
+  .home-page .VPContent {
+    margin-top: calc(33.33vw * 0.6) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: transparent !important;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+}
+

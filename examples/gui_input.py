@@ -13,11 +13,10 @@ To watch live, connect any VNC viewer:
     vncviewer 127.0.0.1:<sb.vnc_port>
 
 Run with: uv run python examples/gui_input.py
-Requires: pip install quicksand[ubuntu-desktop]
+Requires: pip install quick-sandbox[ubuntu-desktop]
 """
 
 import asyncio
-import time
 from pathlib import Path
 
 from quicksand import Key
@@ -47,20 +46,20 @@ async def main() -> None:
         await _shot(sb, "01_boot.png")
 
         # Wait for Xfce4 to fully start
-        time.sleep(10)
+        await asyncio.sleep(10)
         await _shot(sb, "02_desktop.png")
 
         # Open xfce4-terminal and type a command
         print("Launching terminal...")
         await sb.execute("DISPLAY=:0 xfce4-terminal --geometry 80x24+50+50 &", timeout=5.0)
-        time.sleep(2)
+        await asyncio.sleep(2)
         await _shot(sb, "03_terminal.png")
 
         # Type in the terminal
         print("Typing in terminal...")
         await sb.type_text("echo 'hello from quicksand desktop'")
         await sb.press_key(Key.RET)
-        time.sleep(1.0)
+        await asyncio.sleep(1.0)
         await _shot(sb, "04_echo.png")
 
         print(f"\nDone. Screenshots in {SCREENSHOTS_DIR.absolute()}")

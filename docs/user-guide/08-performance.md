@@ -12,8 +12,8 @@ Measured with `quicksand benchmark -n 5` on macOS ARM64 (Apple M3 Max, HVF):
 | `ubuntu` | 0.88s | 0.91s |
 | `alpine-desktop` | 0.47s | 0.54s |
 | `ubuntu-desktop` | 0.90s | 0.96s |
-| `aif-agent-sandbox` | 0.91s | 0.92s |
-| `aif-cua-agent-sandbox` | 0.85s | 1.01s |
+| `quicksand-agent` | 0.91s | 0.92s |
+| `quicksand-cua` | 0.85s | 1.01s |
 
 Boot time is measured from `start()` to sandbox ready (agent connected, mounts configured). The biggest factor is hardware acceleration (TCG is 10-50x slower).
 

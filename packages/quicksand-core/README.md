@@ -6,17 +6,16 @@ It includes the abstractions for running VMs that AI agents can interact with, i
 
 ## Installation
 
-For most users, install via the main quicksand CLI installer:
+For most users, install the main package:
 
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
-quicksand install ubuntu
+pip install 'quick-sandbox[qemu,ubuntu]'
 ```
 
 For core-only (no bundled images):
 
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand-core"
+pip install quick-sandbox
 ```
 
 ## Core Exports
@@ -82,8 +81,7 @@ asyncio.run(main())
 Install `quicksand` with a bundled image for zero-configuration usage:
 
 ```bash
-pip install "git+ssh://git@github.com/microsoft/quicksand.git#subdirectory=packages/quicksand"
-quicksand install ubuntu
+pip install 'quick-sandbox[qemu,ubuntu]'
 ```
 
 ```python
