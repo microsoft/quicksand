@@ -67,6 +67,7 @@ dev = [
     "pytest-timeout",
     "hatchling",
     "uv-release==0.30.2a0",
+    "pre-commit>=4.6.0",
 ]
 
 [tool.poe.tasks]
