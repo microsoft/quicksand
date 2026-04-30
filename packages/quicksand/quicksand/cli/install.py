@@ -285,7 +285,11 @@ def _get_latest_release_tag(pkg_name: str) -> str | None:
     )
     if result.returncode != 0:
         return None
-    tags = [t for t in result.stdout.strip().splitlines() if t and not t.endswith("-dev")]
+    tags = [
+        t
+        for t in result.stdout.strip().splitlines()
+        if t and ".dev" not in t and not t.endswith("-base") and not t.endswith("-dev")
+    ]
     return tags[-1] if tags else None
 
 
@@ -353,7 +357,12 @@ def _resolve_compatible_tag(
     prefix = f"{pkg_name}/v"
     pkg_releases: list[tuple[str, str, str]] = []  # (tag, version, date)
     for tag, date in all_releases.items():
-        if tag.startswith(prefix) and not tag.endswith("-dev"):
+        if (
+            tag.startswith(prefix)
+            and ".dev" not in tag
+            and not tag.endswith("-base")
+            and not tag.endswith("-dev")
+        ):
             pkg_releases.append((tag, tag[len(prefix) :], date))
 
     if not pkg_releases:
