@@ -1,11 +1,11 @@
 [project]
 name = "quicksand-image-tools"
-version = "0.5.5"
+version = "0.5.6"
 description = "Development tools for quicksand - build custom VM images from Dockerfiles"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["quicksand-core>=0.11.5,<0.12.0"]
+dependencies = ["quicksand-core>=0.11.6,<0.12.0"]
 
 [project.scripts]
 quicksand-image-tools = "quicksand_image_tools.cli:main"
