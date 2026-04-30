@@ -914,6 +914,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+agent = [
+    { name = "quicksand-agent" },
+]
 all = [
     { name = "quicksand-agent" },
     { name = "quicksand-alpine" },
@@ -930,6 +933,9 @@ alpine = [
 alpine-desktop = [
     { name = "quicksand-alpine-desktop" },
 ]
+cua = [
+    { name = "quicksand-cua" },
+]
 dev = [
     { name = "quicksand-base-scaffold" },
     { name = "quicksand-image-tools" },
@@ -937,12 +943,6 @@ dev = [
 ]
 qemu = [
     { name = "quicksand-qemu" },
-]
-quicksand-agent = [
-    { name = "quicksand-agent" },
-]
-quicksand-cua = [
-    { name = "quicksand-cua" },
 ]
 ubuntu = [
     { name = "quicksand-ubuntu" },
@@ -953,8 +953,8 @@ ubuntu-desktop = [
 
 [package.metadata]
 requires-dist = [
+    { name = "quicksand-agent", marker = "extra == 'agent'", editable = "packages/contrib/quicksand-agent" },
     { name = "quicksand-agent", marker = "extra == 'all'", editable = "packages/contrib/quicksand-agent" },
-    { name = "quicksand-agent", marker = "extra == 'quicksand-agent'", editable = "packages/contrib/quicksand-agent" },
     { name = "quicksand-alpine", marker = "extra == 'all'", editable = "packages/contrib/quicksand-alpine" },
     { name = "quicksand-alpine", marker = "extra == 'alpine'", editable = "packages/contrib/quicksand-alpine" },
     { name = "quicksand-alpine-desktop", marker = "extra == 'all'", editable = "packages/contrib/quicksand-alpine-desktop" },
@@ -962,7 +962,7 @@ requires-dist = [
     { name = "quicksand-base-scaffold", marker = "extra == 'dev'", editable = "packages/dev/quicksand-base-scaffold" },
     { name = "quicksand-core", editable = "packages/quicksand-core" },
     { name = "quicksand-cua", marker = "extra == 'all'", editable = "packages/contrib/quicksand-cua" },
-    { name = "quicksand-cua", marker = "extra == 'quicksand-cua'", editable = "packages/contrib/quicksand-cua" },
+    { name = "quicksand-cua", marker = "extra == 'cua'", editable = "packages/contrib/quicksand-cua" },
     { name = "quicksand-image-tools", marker = "extra == 'all'", editable = "packages/dev/quicksand-image-tools" },
     { name = "quicksand-image-tools", marker = "extra == 'dev'", editable = "packages/dev/quicksand-image-tools" },
     { name = "quicksand-overlay-scaffold", marker = "extra == 'dev'", editable = "packages/dev/quicksand-overlay-scaffold" },
@@ -973,7 +973,7 @@ requires-dist = [
     { name = "quicksand-ubuntu-desktop", marker = "extra == 'all'", editable = "packages/contrib/quicksand-ubuntu-desktop" },
     { name = "quicksand-ubuntu-desktop", marker = "extra == 'ubuntu-desktop'", editable = "packages/contrib/quicksand-ubuntu-desktop" },
 ]
-provides-extras = ["qemu", "ubuntu", "alpine", "alpine-desktop", "ubuntu-desktop", "quicksand-agent", "quicksand-cua", "dev", "all"]
+provides-extras = ["qemu", "ubuntu", "alpine", "alpine-desktop", "ubuntu-desktop", "agent", "cua", "dev", "all"]
 
 [[package]]
 name = "quicksand-agent"
