@@ -1126,7 +1126,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-qemu"
-version = "0.5.4.dev0"
+version = "0.5.4"
 source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
