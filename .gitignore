@@ -58,3 +58,5 @@ docs/.vitepress/cache/
 
 # GHA runners — track cloud infra, ignore local runner agent
 gha-runners/local/deps/
+deps/
+gha-runners
