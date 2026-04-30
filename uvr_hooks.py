@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 from uv_release.types import Hooks as ReleaseHook
 from uv_release.types import Plan
@@ -54,6 +56,100 @@ def _retag_wheels(dist: Path) -> None:
             if dest.resolve() != whl.resolve() and not dest.exists():
                 shutil.copy2(whl, dest)
                 print(f"  {whl.name} -> {new_name}")
+
+
+# Runner used to build pure (py3-none-any) wheels for PyPI.
+# Only one runner needs to do this since the output is platform-independent.
+_PURE_WHEEL_RUNNER: list[str] = ["self-hosted", "linux", "x64"]
+
+# PyPI per-file size limit.
+_PYPI_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
+
+
+def _discover_contrib_packages() -> dict[str, str]:
+    """Return ``{dist_name: package_path}`` for contrib packages with custom build hooks."""
+    import tomllib
+
+    contrib: dict[str, str] = {}
+    for toml_path in sorted(Path("packages/contrib").glob("*/pyproject.toml")):
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        hooks = (
+            data.get("tool", {})
+            .get("hatch", {})
+            .get("build", {})
+            .get("targets", {})
+            .get("wheel", {})
+            .get("hooks", {})
+        )
+        if "custom" in hooks:
+            dist_name = data["project"]["name"].replace("-", "_")
+            contrib[dist_name] = str(toml_path.parent)
+    return contrib
+
+
+def _build_pure_wheels(dist: Path) -> None:
+    """Build ``py3-none-any`` wheels for contrib packages that have fat wheels in *dist*."""
+    import os
+
+    contrib = _discover_contrib_packages()
+    if not contrib:
+        return
+
+    env = {**os.environ, "QUICKSAND_PURE_WHEEL": "1"}
+    built: set[str] = set()
+    for whl in sorted(dist.glob("*.whl")):
+        name = whl.name.split("-")[0]
+        if name in contrib and name not in built:
+            built.add(name)
+            pkg_path = contrib[name]
+            print(f"  Building pure wheel: {pkg_path}")
+            subprocess.run(
+                [
+                    "uv",
+                    "build",
+                    pkg_path,
+                    "--wheel",
+                    "--out-dir",
+                    str(dist),
+                    "--find-links",
+                    "deps",
+                    "--find-links",
+                    str(dist),
+                    "--no-sources",
+                ],
+                env=env,
+                check=True,
+            )
+
+
+def _filter_wheels_for_pypi(dist: Path) -> None:
+    """Keep either fat or pure wheels per package based on the PyPI size limit.
+
+    For packages that have both platform-tagged (fat) and ``py3-none-any`` (pure)
+    variants: delete the fat wheels if any exceeds 100 MB, otherwise delete the
+    pure wheel so pip installs the platform-specific one.
+    """
+    packages: dict[str, list[Path]] = defaultdict(list)
+    for whl in dist.glob("*.whl"):
+        packages[whl.name.split("-")[0]].append(whl)
+
+    for _dist_name, wheels in packages.items():
+        pure = [w for w in wheels if "py3-none-any" in w.name]
+        fat = [w for w in wheels if "py3-none-any" not in w.name]
+        if not pure or not fat:
+            continue
+
+        oversized = any(w.stat().st_size > _PYPI_MAX_SIZE for w in fat)
+        if oversized:
+            for w in fat:
+                size_mb = w.stat().st_size / 1024 / 1024
+                print(f"  Removing oversized wheel: {w.name} ({size_mb:.0f} MB)")
+                w.unlink()
+        else:
+            for w in pure:
+                print(f"  Removing pure wheel (fat wheels are under 100 MB): {w.name}")
+                w.unlink()
 
 
 # Packages whose changes require integration tests.
@@ -215,6 +311,17 @@ class Hooks(ReleaseHook):
     def pre_build(self) -> None:
         """No-op — gh install and image extraction handled by extract_dep_images."""
 
+    def pre_command(self, job_name: str, command: Any) -> None:
+        """Filter oversized wheels before the first PyPI publish command."""
+        if (
+            job_name == "publish"
+            and getattr(command, "type", None) == "publish_to_index"
+            and not getattr(self, "_pypi_filtered", False)
+        ):
+            self._pypi_filtered = True
+            print("Filtering oversized wheels for PyPI...")
+            _filter_wheels_for_pypi(Path("dist"))
+
     def retag(self) -> None:
         """Retag platform-specific wheels for cross-OS distribution."""
         import json
@@ -228,6 +335,10 @@ class Hooks(ReleaseHook):
             return
         print(f"Retagging wheels for cross-platform (runner: {runner})")
         _retag_wheels(Path("dist"))
+
+        if runner == _PURE_WHEEL_RUNNER:
+            print("Building pure wheels for contrib packages...")
+            _build_pure_wheels(Path("dist"))
 
     def post_build(self) -> None:
         """Local builds — delegate to retag."""

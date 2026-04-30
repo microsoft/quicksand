@@ -6,6 +6,7 @@ previously duplicated across every ``hatch_build.py`` in the monorepo.
 
 from __future__ import annotations
 
+import os
 import sysconfig
 
 _X86_NAMES = {"x86_64", "amd64", "x64"}
@@ -42,6 +43,9 @@ def set_platform_wheel_tag(
         RuntimeError: If the host architecture is unsupported (only for real builds).
     """
     if target_name != "wheel" or version == "editable":
+        return False
+    if os.environ.get("QUICKSAND_PURE_WHEEL", "").strip() == "1":
+        build_data["pure_python"] = True
         return False
     native_arch = get_image_arch()  # validates arch, raises on unsupported
     build_data["pure_python"] = False

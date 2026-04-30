@@ -1,5 +1,9 @@
 """Install optional quicksand extras from GitHub releases.
 
+Downloads wheels from public GitHub releases using the REST API — no ``gh``
+CLI required.  Authentication is optional: set ``GH_TOKEN`` or
+``GITHUB_TOKEN`` to avoid rate limits on private repos or heavy usage.
+
 Programmatic API::
 
     from quicksand import install
@@ -14,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import platform
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,6 +26,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = "microsoft/quicksand"
+_GITHUB_API = f"https://api.github.com/repos/{REPO}"
 
 # Short aliases → actual package names on GitHub
 ALIASES: dict[str, list[str]] = {
@@ -86,8 +90,8 @@ def install(*extras: str, arch: str | None = None) -> None:
             Downloads cross-platform wheels for use with ``quicksand run --arch``.
 
     Raises:
-        RuntimeError: If ``gh`` CLI is missing or not authenticated, or
-            if no matching wheels are found.
+        RuntimeError: If no matching wheels are found for the requested
+            packages.
 
     Examples::
 
@@ -100,8 +104,6 @@ def install(*extras: str, arch: str | None = None) -> None:
     """
     if not extras:
         raise ValueError("At least one extra name is required")
-
-    _require_gh()
 
     packages: list[str] = []
     versions: dict[str, str | None] = {}
@@ -144,15 +146,6 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def cmd(args: argparse.Namespace) -> int:
     """Install packages from GitHub releases."""
-    if not shutil.which("gh"):
-        print("Error: gh CLI not found. Install from https://cli.github.com/")
-        return 1
-
-    result = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
-    if result.returncode != 0:
-        print("Error: gh CLI not authenticated. Run: gh auth login")
-        return 1
-
     packages: list[str] = []
     versions: dict[str, str | None] = {}
     for raw in args.extras:
@@ -168,13 +161,11 @@ def cmd(args: argparse.Namespace) -> int:
 # ── Implementation ────────────────────────────────────────────────────
 
 
-def _require_gh() -> None:
-    """Check gh CLI is available and authenticated."""
-    if not shutil.which("gh"):
-        raise RuntimeError("gh CLI not found. Install from https://cli.github.com/")
-    result = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError("gh CLI not authenticated. Run: gh auth login")
+def _github_request(url: str) -> urllib.request.Request:
+    """Build a GitHub API request."""
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github+json")
+    return req
 
 
 def _install_packages(
@@ -229,7 +220,7 @@ def _install_packages(
             if not tag:
                 if pkg_name in packages:
                     print(f"Error: No compatible release found for {pkg_name}")
-                    print(f"  Check releases: gh release list --repo {REPO}")
+                    print(f"  Check releases: https://github.com/{REPO}/releases")
                     return 1
                 continue  # not a quicksand package, pip will resolve from PyPI
 
@@ -276,23 +267,18 @@ def _install_packages(
 
 def _get_latest_release_tag(pkg_name: str) -> str | None:
     """Find the latest per-package release tag (e.g. quicksand-core/v0.3.4)."""
-    result = subprocess.run(
-        [
-            "gh",
-            "api",
-            f"repos/{REPO}/git/matching-refs/tags/{pkg_name}/v",
-            "--jq",
-            '.[].ref | ltrimstr("refs/tags/")',
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
+    url = f"{_GITHUB_API}/git/matching-refs/tags/{pkg_name}/v"
+    try:
+        with urllib.request.urlopen(_github_request(url)) as resp:
+            refs = json.load(resp)
+    except Exception:
         return None
     tags = [
-        t
-        for t in result.stdout.strip().splitlines()
-        if t and ".dev" not in t and not t.endswith("-base") and not t.endswith("-dev")
+        ref["ref"].removeprefix("refs/tags/")
+        for ref in refs
+        if not ref["ref"].endswith("-dev")
+        and ".dev" not in ref["ref"]
+        and not ref["ref"].endswith("-base")
     ]
     return tags[-1] if tags else None
 
@@ -320,26 +306,20 @@ def _version_tuple(ver: str) -> tuple[int, ...]:
 
 def _get_all_releases_with_dates() -> dict[str, str]:
     """Fetch every GitHub release in the repo → ``{tag_name: published_at}``."""
-    result = subprocess.run(
-        [
-            "gh",
-            "api",
-            f"repos/{REPO}/releases",
-            "--paginate",
-            "--jq",
-            ".[] | [.tag_name, .published_at] | @tsv",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return {}
     releases: dict[str, str] = {}
-    for line in result.stdout.strip().splitlines():
-        if "\t" not in line:
-            continue
-        tag, date = line.split("\t", 1)
-        releases[tag] = date
+    page = 1
+    while True:
+        url = f"{_GITHUB_API}/releases?per_page=100&page={page}"
+        try:
+            with urllib.request.urlopen(_github_request(url)) as resp:
+                data = json.load(resp)
+        except Exception:
+            break
+        if not data:
+            break
+        for rel in data:
+            releases[rel["tag_name"]] = rel["published_at"]
+        page += 1
     return releases
 
 
@@ -490,29 +470,26 @@ def _wheel_compatible_with_host(name: str) -> bool:
 
 def _download_release_wheels(tag: str, dest_dir: Path) -> list[Path]:
     """Download host-compatible .whl assets from a GitHub release into dest_dir."""
-    result = subprocess.run(
-        ["gh", "api", f"repos/{REPO}/releases/tags/{tag}", "--jq", ".assets[] | {name, size, url}"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
+    url = f"{_GITHUB_API}/releases/tags/{tag}"
+    try:
+        with urllib.request.urlopen(_github_request(url)) as resp:
+            release = json.load(resp)
+    except Exception:
         return []
 
-    token = _get_gh_token()
     downloaded: list[Path] = []
-    for line in result.stdout.strip().splitlines():
-        if not line:
+    for asset in release.get("assets", []):
+        name = asset["name"]
+        if not name.endswith(".whl"):
             continue
-        asset = json.loads(line)
-        if not asset["name"].endswith(".whl"):
+        if not _wheel_compatible_with_host(name):
             continue
-        if not _wheel_compatible_with_host(asset["name"]):
-            continue
-        dest = dest_dir / asset["name"]
+        dest = dest_dir / name
         if dest.exists():
             continue
-        print(f"Downloading {asset['name']}")
-        _download_with_progress(asset["url"], dest, token, asset["size"])
+        print(f"Downloading {name}")
+        download_url = asset.get("browser_download_url", asset["url"])
+        _download_with_progress(download_url, dest, asset["size"])
         downloaded.append(dest)
     return downloaded
 
@@ -605,12 +582,6 @@ def _cleanup_incompatible_wheels(wheel_dir: Path) -> None:
             whl.unlink()
 
 
-def _get_gh_token() -> str:
-    """Get GitHub token from gh CLI."""
-    result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True)
-    return result.stdout.strip()
-
-
 def _format_size(size_bytes: int) -> str:
     """Format size in bytes to human readable string."""
     size = float(size_bytes)
@@ -621,10 +592,9 @@ def _format_size(size_bytes: int) -> str:
     return f"{size:.1f}TB"
 
 
-def _download_with_progress(url: str, dest: Path, token: str, size: int) -> None:
+def _download_with_progress(url: str, dest: Path, size: int) -> None:
     """Download a file with progress bar."""
-    req = urllib.request.Request(url)
-    req.add_header("Authorization", f"Bearer {token}")
+    req = _github_request(url)
     req.add_header("Accept", "application/octet-stream")
 
     start_time = time.time()
