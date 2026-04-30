@@ -907,7 +907,7 @@ wheels = [
 
 [[package]]
 name = "quick-sandbox"
-version = "0.11.2.dev0"
+version = "0.11.3.dev0"
 source = { editable = "packages/quicksand" }
 dependencies = [
     { name = "quicksand-core" },
