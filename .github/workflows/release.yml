@@ -18,7 +18,7 @@ jobs:
   # Validate
   # --------------------------------------------------------------------------
   validate:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     environment: release
     steps:
     - uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
   # --------------------------------------------------------------------------
   check:
     needs: [validate]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     environment: release
     strategy:
       fail-fast: true
@@ -101,7 +101,7 @@ jobs:
   verify-licenses:
     needs: [validate, build]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'verify-licenses')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     environment: release
     steps:
     - uses: actions/checkout@v4
