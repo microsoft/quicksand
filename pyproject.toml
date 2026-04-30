@@ -105,6 +105,7 @@ asyncio_default_test_loop_scope = "module"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = ["gha-runners", "deps", "dist"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
@@ -114,5 +115,5 @@ python-version = "3.11"
 extra-paths = ["scripts"]
 
 [tool.ty.src]
-# Scripts meant to run inside sandboxes, not the host
+include = ["packages", "scripts", "tests", "examples"]
 exclude = ["examples/playwright_vnc/browser_script.py"]
