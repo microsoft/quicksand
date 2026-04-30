@@ -38,7 +38,7 @@ quicksand-ubuntu-desktop = [["self-hosted", "linux", "x64"], ["self-hosted", "ma
 
 [tool.uvr.publish]
 index = "pypi"
-environment = ""
+environment = "pypi"
 trusted-publishing = "automatic"
 include = []
 exclude = []
