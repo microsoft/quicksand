@@ -31,7 +31,7 @@ quicksand-base-scaffold = [["self-hosted", "linux", "x64"]]
 quicksand-core = [["self-hosted", "linux", "x64"]]
 quicksand-image-tools = [["self-hosted", "linux", "x64"]]
 quicksand-overlay-scaffold = [["self-hosted", "linux", "x64"]]
-quicksand-qemu = [["self-hosted", "x64", "windows"], ["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"], ["self-hosted", "linux", "arm64"]]
+quicksand-qemu = [["self-hosted", "x64", "windows"], ["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"], ["self-hosted", "linux", "arm64"], ["self-hosted", "windows", "arm64"]]
 quicksand-smb = [["self-hosted", "linux", "x64"]]
 quicksand-ubuntu = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
 quicksand-ubuntu-desktop = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
@@ -67,7 +67,7 @@ dev = [
     "pytest-asyncio",
     "pytest-timeout",
     "hatchling",
-    "uv-release==0.31.1",
+    "uv-release==0.32.0",
     "pre-commit>=4.6.0",
 ]
 
