@@ -960,12 +960,12 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-build-tools"
-version = "0.5.3.dev0"
+version = "0.5.4.dev0"
 source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.11.3.dev0"
+version = "0.11.4.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "httpx" },
@@ -1014,7 +1014,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-image-tools"
-version = "0.5.3.dev0"
+version = "0.5.4.dev0"
 source = { editable = "packages/dev/quicksand-image-tools" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1042,12 +1042,12 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-qemu"
-version = "0.5.3.dev0"
+version = "0.5.4.dev0"
 source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
 name = "quicksand-smb"
-version = "0.4.3.dev0"
+version = "0.4.4.dev0"
 source = { editable = "packages/quicksand-smb" }
 
 [[package]]
