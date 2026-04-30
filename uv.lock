@@ -907,7 +907,7 @@ wheels = [
 
 [[package]]
 name = "quick-sandbox"
-version = "0.11.1"
+version = "0.11.2.dev0"
 source = { editable = "packages/quicksand" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1044,12 +1044,12 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-build-tools"
-version = "0.5.4"
+version = "0.5.5.dev0"
 source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.11.3"
+version = "0.11.4.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "httpx" },
@@ -1098,7 +1098,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-image-tools"
-version = "0.5.4"
+version = "0.5.5.dev0"
 source = { editable = "packages/dev/quicksand-image-tools" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1131,7 +1131,7 @@ source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
 name = "quicksand-smb"
-version = "0.4.4"
+version = "0.4.5.dev0"
 source = { editable = "packages/quicksand-smb" }
 
 [[package]]
