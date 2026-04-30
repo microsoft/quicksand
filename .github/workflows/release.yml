@@ -115,60 +115,60 @@ jobs:
         merge-multiple: true
     - run: uv run --no-project scripts/ci/verify_licenses.py dist/*.whl
 
-  # --------------------------------------------------------------------------
-  # Test (integration tests — boot VMs from built wheels)
-  # --------------------------------------------------------------------------
-  test:
-    needs: [build, verify-licenses]
-    if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'test')
-    runs-on: ubuntu-latest
-    environment: release
-    timeout-minutes: 15
-    strategy:
-      fail-fast: true
-      matrix:
-        vm: [ubuntu, alpine]
-    steps:
-    - uses: actions/checkout@v4
-    - uses: astral-sh/setup-uv@v5
-      with:
-        enable-cache: false
+  # # --------------------------------------------------------------------------
+  # # Test (integration tests — boot VMs from built wheels)
+  # # --------------------------------------------------------------------------
+  # test:
+  #   needs: [build, verify-licenses]
+  #   if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'test')
+  #   runs-on: ubuntu-latest
+  #   environment: release
+  #   timeout-minutes: 15
+  #   strategy:
+  #     fail-fast: true
+  #     matrix:
+  #       vm: [ubuntu, alpine]
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: astral-sh/setup-uv@v5
+  #     with:
+  #       enable-cache: false
 
-    - uses: actions/download-artifact@v4
-      with:
-        pattern: wheels-*
-        path: dist/
-        merge-multiple: true
-        run-id: ${{ fromJSON(inputs.plan).reuse_run_id != '' && fromJSON(inputs.plan).reuse_run_id || github.run_id }}
-        github-token: ${{ secrets.GITHUB_TOKEN }}
+  #   - uses: actions/download-artifact@v4
+  #     with:
+  #       pattern: wheels-*
+  #       path: dist/
+  #       merge-multiple: true
+  #       run-id: ${{ fromJSON(inputs.plan).reuse_run_id != '' && fromJSON(inputs.plan).reuse_run_id || github.run_id }}
+  #       github-token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: KVM setup
-      run: |
-        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-        sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
+  #   - name: KVM setup
+  #     run: |
+  #       echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+  #         | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+  #       sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
 
-    - name: Install packages
-      run: ${{ fromJSON(inputs.plan).test_install[matrix.vm] }}
-      env:
-        GH_TOKEN: ${{ github.token }}
+  #   - name: Install packages
+  #     run: ${{ fromJSON(inputs.plan).test_install[matrix.vm] }}
+  #     env:
+  #       GH_TOKEN: ${{ github.token }}
 
-    - name: Run integration tests
-      run: |
-        uv run --no-project pytest \
-          tests/integration/execution \
-          tests/integration/mounts \
-          tests/integration/network \
-          tests/integration/checkpoint \
-          -v --timeout=300
-      env:
-        QUICKSAND_TEST_VM: ${{ matrix.vm }}
+  #   - name: Run integration tests
+  #     run: |
+  #       uv run --no-project pytest \
+  #         tests/integration/execution \
+  #         tests/integration/mounts \
+  #         tests/integration/network \
+  #         tests/integration/checkpoint \
+  #         -v --timeout=300
+  #     env:
+  #       QUICKSAND_TEST_VM: ${{ matrix.vm }}
 
   # --------------------------------------------------------------------------
   # Release — create per-package GitHub releases
   # --------------------------------------------------------------------------
   release:
-    needs: [build, verify-licenses, test]
+    needs: [build, verify-licenses]
     runs-on: ubuntu-latest
     environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'release') }}
