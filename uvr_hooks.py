@@ -218,8 +218,7 @@ class Hooks(ReleaseHook):
             update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
         )
 
-        # Wire the build pre-hook to ensure gh CLI is available, and
-        # inject a platform-filter command after dep downloads.  uv
+        # Inject a platform-filter command after dep downloads.  uv
         # incorrectly picks linux_aarch64 over macosx_arm64 from find-links
         # when both are present, so we remove non-native wheels after download.
         from uv_release.commands import ShellCommand
@@ -227,14 +226,6 @@ class Hooks(ReleaseHook):
         new_jobs = []
         for job in plan.jobs:
             if job.name == "build":
-                updates = {}
-                if not job.pre_hook:
-                    updates["pre_hook"] = "ensure_gh"
-                if not job.post_hook:
-                    updates["post_hook"] = "retag"
-                if updates:
-                    job = job.model_copy(update=updates)
-                # Insert platform filter after download_wheels
                 new_cmds = []
                 for cmd in job.commands:
                     new_cmds.append(cmd)
@@ -309,7 +300,8 @@ class Hooks(ReleaseHook):
             print(f"Warning: failed to install gh CLI: {e}")
 
     def pre_build(self) -> None:
-        """No-op — gh install and image extraction handled by extract_dep_images."""
+        """Ensure gh CLI is available before building (needed by some runners)."""
+        self.ensure_gh()
 
     def pre_command(self, job_name: str, command: Any) -> None:
         """Filter oversized wheels before the first PyPI publish command."""
