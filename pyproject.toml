@@ -35,6 +35,7 @@ quicksand-qemu = [["windows-latest"], ["self-hosted", "linux", "x64"], ["self-ho
 quicksand-smb = [["self-hosted", "linux", "x64"]]
 quicksand-ubuntu = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
 quicksand-ubuntu-desktop = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
+quicksand-build-tools = [["self-hosted", "linux", "x64"]]
 
 [tool.uvr.publish]
 index = "pypi"
