@@ -31,6 +31,8 @@ ALIASES: dict[str, list[str]] = {
     "alpine": ["quicksand-alpine"],
     "alpine-desktop": ["quicksand-alpine-desktop"],
     "ubuntu-desktop": ["quicksand-ubuntu-desktop"],
+    "agent": ["quicksand-agent"],
+    "cua": ["quicksand-cua"],
     "dev": ["quicksand-image-tools", "quicksand-overlay-scaffold", "quicksand-base-scaffold"],
     "all": [
         "quicksand-qemu",
@@ -38,6 +40,8 @@ ALIASES: dict[str, list[str]] = {
         "quicksand-alpine",
         "quicksand-alpine-desktop",
         "quicksand-ubuntu-desktop",
+        "quicksand-agent",
+        "quicksand-cua",
     ],
 }
 
