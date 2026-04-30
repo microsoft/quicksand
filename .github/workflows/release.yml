@@ -25,6 +25,7 @@ jobs:
     - id: setup-uv
       uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
     - name: Reject releases from main
       if: github.ref == 'refs/heads/main'
@@ -53,6 +54,8 @@ jobs:
       with:
         clean: true
     - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: false
     - run: uv run poe ${{ matrix.task }}
 
   # --------------------------------------------------------------------------
@@ -75,6 +78,7 @@ jobs:
     - id: setup-uv
       uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
 
     - id: build
@@ -102,6 +106,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: false
     - uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
@@ -125,6 +131,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: false
 
     - uses: actions/download-artifact@v4
       with:
@@ -172,6 +180,7 @@ jobs:
     - id: setup-uv
       uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
     - name: Configure git identity
       run: |
@@ -205,6 +214,7 @@ jobs:
     - id: setup-uv
       uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
     - id: publish
       name: Publish to PyPI
@@ -231,6 +241,7 @@ jobs:
     - id: setup-uv
       uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
     - name: Configure git identity
       run: |
