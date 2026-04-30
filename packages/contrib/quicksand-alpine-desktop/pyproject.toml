@@ -5,7 +5,7 @@ description = "Minimal Alpine Linux desktop VM (Xfce4) for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["quicksand-core>=0.11.5.dev0,<0.12.0", "quicksand-alpine>=0.9.0,<0.10.0"]
+dependencies = ["quicksand-core>=0.11.5,<0.12.0", "quicksand-alpine>=0.9.0,<0.10.0"]
 
 [dependency-groups]
 dev = []

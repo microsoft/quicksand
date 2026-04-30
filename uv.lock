@@ -1049,7 +1049,7 @@ source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.11.5.dev0"
+version = "0.11.5"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "httpx" },

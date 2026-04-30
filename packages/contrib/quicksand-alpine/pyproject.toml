@@ -5,7 +5,7 @@ description = "Pre-built Alpine Linux VM image for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["quicksand-core>=0.11.5.dev0,<0.12.0"]
+dependencies = ["quicksand-core>=0.11.5,<0.12.0"]
 
 [dependency-groups]
 dev = ["quicksand-image-tools>=0.4.4"]
