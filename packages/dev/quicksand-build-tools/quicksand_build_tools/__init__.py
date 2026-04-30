@@ -175,6 +175,10 @@ class BinaryBundler:
             except Exception:
                 pass
 
+        # PyPI requires manylinux tags for Linux wheels (PEP 600)
+        if platform_tag.startswith("linux_"):
+            platform_tag = platform_tag.replace("linux_", "manylinux_2_17_", 1)
+
         build_data["tag"] = f"py3-none-{platform_tag}"
 
     def force_include_bin_dir(self, bin_dir: Path, root: Path, build_data: dict) -> None:

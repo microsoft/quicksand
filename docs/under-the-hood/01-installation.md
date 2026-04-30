@@ -70,8 +70,8 @@ quicksand-qemu is in `_SKIP` — never retagged. Each runner produces exactly on
 
 | Runner | QEMU Binary | Wheel Tag | After `pre_release` merge |
 |--------|-------------|-----------|--------------------------|
-| `[linux, x64]` | qemu-system-x86_64 (Linux) | `linux_x86_64` | unchanged |
-| `[linux, arm64]` | qemu-system-aarch64 (Linux) | `linux_aarch64` | unchanged |
+| `[linux, x64]` | qemu-system-x86_64 (Linux) | `manylinux_2_17_x86_64` | unchanged |
+| `[linux, arm64]` | qemu-system-aarch64 (Linux) | `manylinux_2_17_aarch64` | unchanged |
 | `[macos, arm64]` | qemu-system-aarch64 (macOS) | `macosx_11_0_arm64` | unchanged |
 | `[windows, x64]` | qemu-system-x86_64.exe | `win_amd64` | → **fat**: x64 in `bin/x86_64/`, arm64 in `bin/arm64/` |
 | `[windows, arm64]` | qemu-system-aarch64.exe | `win_arm64` ¹ | unchanged (consumed by merge into fat wheel) |
