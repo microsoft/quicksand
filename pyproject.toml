@@ -67,7 +67,7 @@ dev = [
     "pytest-asyncio",
     "pytest-timeout",
     "hatchling",
-    "uv-release==0.31.0a2",
+    "uv-release==0.31.0a5",
     "pre-commit>=4.6.0",
 ]
 
