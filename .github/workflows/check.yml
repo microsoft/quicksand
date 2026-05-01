@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        task: [check-code, check-format, check-types, test-unit, test-smb]
+        task: [check, test:unit]
     steps:
       - uses: actions/checkout@v6
         with:
