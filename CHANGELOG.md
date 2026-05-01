@@ -4,6 +4,21 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.5] - 2026-04-30
+
+### Added
+- **quicksand-core:** Auto-install images from GitHub releases when `QUICKSAND_AUTO_INSTALL=1` is set — downloads the fat wheel and extracts images directly into site-packages
+- **quicksand-image-tools:** `QUICKSAND_PURE_WHEEL=1` env var to build pure `py3-none-any` wheels without images
+- **uvr_hooks:** Build pure wheels during `post_build` and filter by size before PyPI publish (>100MB → pure wheel, ≤100MB → fat wheel)
+
+### Changed
+- **quick-sandbox:** `quicksand install` now uses the public GitHub REST API — no `gh` CLI or authentication required
+- **contrib packages:** Error messages when images are missing now direct users to `quicksand install`
+- **README:** Clone URLs updated from SSH to HTTPS
+
+### Fixed
+- **quicksand-qemu:** Windows installer now uses a temp directory to avoid requiring admin privileges
+
 ## [v0.10.3] - 2026-04-21
 
 ### Changed

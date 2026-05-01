@@ -23,10 +23,13 @@ class _CuaSandboxImageProvider:
         from quicksand_core.qemu.image_resolver import ImageResolver
 
         if not (IMAGES_DIR / "manifest.json").exists():
-            raise FileNotFoundError(
-                f"No bundled save found in {IMAGES_DIR}. "
-                "The package may not have been built correctly."
-            )
+            from quicksand_core._auto_install import auto_install_images
+
+            if not auto_install_images("quicksand-cua", IMAGES_DIR):
+                raise FileNotFoundError(
+                    "No bundled save found. If you installed from PyPI, download images with:\n"
+                    "  quicksand install quicksand-cua"
+                )
         return ImageResolver()._resolve_save(IMAGES_DIR)
 
 

@@ -48,10 +48,13 @@ class _AlpineDesktopImageProvider:
         from quicksand_core.qemu.image_resolver import ImageResolver
 
         if not (_IMAGES_DIR / "manifest.json").exists():
-            raise FileNotFoundError(
-                f"No bundled save found in {_IMAGES_DIR}. "
-                "The package may not have been built correctly."
-            )
+            from quicksand_core._auto_install import auto_install_images
+
+            if not auto_install_images("quicksand-alpine-desktop", _IMAGES_DIR):
+                raise FileNotFoundError(
+                    "No bundled save found. If you installed from PyPI, download images with:\n"
+                    "  quicksand install quicksand-alpine-desktop"
+                )
         return ImageResolver()._resolve_save(_IMAGES_DIR)
 
 

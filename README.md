@@ -153,7 +153,7 @@ Sandbox(
 ## Building from source
 
 ```bash
-git clone git@github.com:microsoft/quicksand.git
+git clone https://github.com/microsoft/quicksand.git
 cd quicksand
 uv sync
 uv run uvr build --all-packages

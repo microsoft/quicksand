@@ -5,10 +5,12 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
-from uv_release.types import Hooks as ReleaseHook
-from uv_release.types import Plan
+from uv_release.dependencies.release.plan import Plan
+from uv_release.dependencies.shared.hooks import Hooks as ReleaseHook
 
 # Canonical runner per architecture — retag only runs on these.
 # x64 images are built natively on Linux; arm64 images are built on
@@ -25,10 +27,10 @@ _ARCH_RE = re.compile(r"(?:x86_64|aarch64|arm64|amd64)$")
 
 # Architecture -> all platform tags the wheel should be available for.
 _ARCH_TARGETS: dict[str, list[str]] = {
-    "x86_64": ["linux_x86_64", "macosx_10_13_x86_64", "win_amd64"],
-    "amd64": ["linux_x86_64", "macosx_10_13_x86_64", "win_amd64"],
-    "aarch64": ["linux_aarch64", "macosx_11_0_arm64", "win_arm64"],
-    "arm64": ["linux_aarch64", "macosx_11_0_arm64", "win_arm64"],
+    "x86_64": ["manylinux_2_17_x86_64", "macosx_10_13_x86_64", "win_amd64"],
+    "amd64": ["manylinux_2_17_x86_64", "macosx_10_13_x86_64", "win_amd64"],
+    "aarch64": ["manylinux_2_17_aarch64", "macosx_11_0_arm64", "win_arm64"],
+    "arm64": ["manylinux_2_17_aarch64", "macosx_11_0_arm64", "win_arm64"],
 }
 
 # Packages that are natively built per-platform (not retagged).
@@ -56,6 +58,100 @@ def _retag_wheels(dist: Path) -> None:
                 print(f"  {whl.name} -> {new_name}")
 
 
+# Runner used to build pure (py3-none-any) wheels for PyPI.
+# Only one runner needs to do this since the output is platform-independent.
+_PURE_WHEEL_RUNNER: list[str] = ["self-hosted", "linux", "x64"]
+
+# PyPI per-file size limit.
+_PYPI_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
+
+
+def _discover_contrib_packages() -> dict[str, str]:
+    """Return ``{dist_name: package_path}`` for contrib packages with custom build hooks."""
+    import tomllib
+
+    contrib: dict[str, str] = {}
+    for toml_path in sorted(Path("packages/contrib").glob("*/pyproject.toml")):
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        hooks = (
+            data.get("tool", {})
+            .get("hatch", {})
+            .get("build", {})
+            .get("targets", {})
+            .get("wheel", {})
+            .get("hooks", {})
+        )
+        if "custom" in hooks:
+            dist_name = data["project"]["name"].replace("-", "_")
+            contrib[dist_name] = str(toml_path.parent)
+    return contrib
+
+
+def _build_pure_wheels(dist: Path) -> None:
+    """Build ``py3-none-any`` wheels for contrib packages that have fat wheels in *dist*."""
+    import os
+
+    contrib = _discover_contrib_packages()
+    if not contrib:
+        return
+
+    env = {**os.environ, "QUICKSAND_PURE_WHEEL": "1"}
+    built: set[str] = set()
+    for whl in sorted(dist.glob("*.whl")):
+        name = whl.name.split("-")[0]
+        if name in contrib and name not in built:
+            built.add(name)
+            pkg_path = contrib[name]
+            print(f"  Building pure wheel: {pkg_path}")
+            subprocess.run(
+                [
+                    "uv",
+                    "build",
+                    pkg_path,
+                    "--wheel",
+                    "--out-dir",
+                    str(dist),
+                    "--find-links",
+                    "deps",
+                    "--find-links",
+                    str(dist),
+                    "--no-sources",
+                ],
+                env=env,
+                check=True,
+            )
+
+
+def _filter_wheels_for_pypi(dist: Path) -> None:
+    """Keep either fat or pure wheels per package based on the PyPI size limit.
+
+    For packages that have both platform-tagged (fat) and ``py3-none-any`` (pure)
+    variants: delete the fat wheels if any exceeds 100 MB, otherwise delete the
+    pure wheel so pip installs the platform-specific one.
+    """
+    packages: dict[str, list[Path]] = defaultdict(list)
+    for whl in dist.glob("*.whl"):
+        packages[whl.name.split("-")[0]].append(whl)
+
+    for _dist_name, wheels in packages.items():
+        pure = [w for w in wheels if "py3-none-any" in w.name]
+        fat = [w for w in wheels if "py3-none-any" not in w.name]
+        if not pure or not fat:
+            continue
+
+        oversized = any(w.stat().st_size > _PYPI_MAX_SIZE for w in fat)
+        if oversized:
+            for w in fat:
+                size_mb = w.stat().st_size / 1024 / 1024
+                print(f"  Removing oversized wheel: {w.name} ({size_mb:.0f} MB)")
+                w.unlink()
+        else:
+            for w in pure:
+                print(f"  Removing pure wheel (fat wheels are under 100 MB): {w.name}")
+                w.unlink()
+
+
 # Packages whose changes require integration tests.
 _TEST_PACKAGES = {
     "quicksand",
@@ -67,63 +163,16 @@ _TEST_PACKAGES = {
 }
 
 
-def _latest_release_tag(pkg: str) -> str | None:
-    """Find the latest release tag for a package using git tags."""
-    result = subprocess.run(
-        ["git", "tag", "-l", f"{pkg}/v*", "--sort=-v:refname"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return None
-    for line in result.stdout.strip().split("\n"):
-        tag = line.strip()
-        if tag and ".dev" not in tag and not tag.endswith("-dev"):
-            return tag
-    return None
-
-
 class Hooks(ReleaseHook):
     def post_plan(self, workspace, intent, plan: Plan) -> Plan:
-        """Skip jobs whose packages didn't change."""
-        changed = {c.package.name for c in plan.changes}
+        """Customize the release plan."""
+        changed = {r.name for r in plan.releases}
         if "test" not in plan.skip and not (changed & _TEST_PACKAGES):
             plan.skip.append("test")
         if "verify-licenses" not in plan.skip and "quicksand-qemu" not in changed:
             plan.skip.append("verify-licenses")
 
-        # Inject per-VM test install commands into the plan.
-        # The workflow downloads built wheels into dist/ via download-artifact.
-        # For unchanged packages we fetch their latest release wheels too.
-        install_lines = [
-            "uv venv --seed",
-            "uv pip install --reinstall pytest pytest-timeout pytest-asyncio",
-        ]
-        for pkg in sorted(_TEST_PACKAGES):
-            if pkg in changed:
-                continue
-            tag = _latest_release_tag(pkg)
-            if not tag:
-                continue
-            dist_name = pkg.replace("-", "_")
-            install_lines.append(
-                f"gh release download {tag} --repo $GITHUB_REPOSITORY"
-                f" --dir dist/"
-                f" --pattern '{dist_name}-*linux_x86_64.whl'"
-                f" --pattern '{dist_name}-*any.whl'"
-                f" --clobber || true"
-            )
-        install_lines.append(
-            "uv pip install --reinstall --find-links dist/"
-            " dist/quicksand-*.whl quicksand-ubuntu quicksand-alpine"
-        )
-        install = "\n".join(install_lines)
-        plan = plan.model_copy(
-            update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
-        )
-
-        # Wire the build pre-hook to ensure gh CLI is available, and
-        # inject a platform-filter command after dep downloads.  uv
+        # Inject a platform-filter command after dep downloads.  uv
         # incorrectly picks linux_aarch64 over macosx_arm64 from find-links
         # when both are present, so we remove non-native wheels after download.
         from uv_release.commands import ShellCommand
@@ -131,14 +180,6 @@ class Hooks(ReleaseHook):
         new_jobs = []
         for job in plan.jobs:
             if job.name == "build":
-                updates = {}
-                if not job.pre_hook:
-                    updates["pre_hook"] = "ensure_gh"
-                if not job.post_hook:
-                    updates["post_hook"] = "retag"
-                if updates:
-                    job = job.model_copy(update=updates)
-                # Insert platform filter after download_wheels
                 new_cmds = []
                 for cmd in job.commands:
                     new_cmds.append(cmd)
@@ -213,7 +254,19 @@ class Hooks(ReleaseHook):
             print(f"Warning: failed to install gh CLI: {e}")
 
     def pre_build(self) -> None:
-        """No-op — gh install and image extraction handled by extract_dep_images."""
+        """Ensure gh CLI is available before building (needed by some runners)."""
+        self.ensure_gh()
+
+    def pre_command(self, job_name: str, command: Any) -> None:
+        """Filter oversized wheels before the first PyPI publish command."""
+        if (
+            job_name == "publish"
+            and getattr(command, "type", None) == "publish_to_index"
+            and not getattr(self, "_pypi_filtered", False)
+        ):
+            self._pypi_filtered = True
+            print("Filtering oversized wheels for PyPI...")
+            _filter_wheels_for_pypi(Path("dist"))
 
     def retag(self) -> None:
         """Retag platform-specific wheels for cross-OS distribution."""
@@ -228,6 +281,10 @@ class Hooks(ReleaseHook):
             return
         print(f"Retagging wheels for cross-platform (runner: {runner})")
         _retag_wheels(Path("dist"))
+
+        if runner == _PURE_WHEEL_RUNNER:
+            print("Building pure wheels for contrib packages...")
+            _build_pure_wheels(Path("dist"))
 
     def post_build(self) -> None:
         """Local builds — delegate to retag."""

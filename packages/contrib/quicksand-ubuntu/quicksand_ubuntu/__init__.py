@@ -69,6 +69,11 @@ def _get_image_artifacts(arch: str | None = None) -> ResolvedImage:
         image_path = _IMAGES_DIR / f"ubuntu-{DISTRO_VERSION}.qcow2"
 
     if not image_path.exists():
+        from quicksand_core._auto_install import auto_install_images
+
+        if auto_install_images("quicksand-ubuntu", _IMAGES_DIR):
+            return _get_image_artifacts(arch)
+
         available = list(_IMAGES_DIR.glob("*.qcow2")) if _IMAGES_DIR.exists() else []
         if available:
             available_str = ", ".join(p.name for p in available)
@@ -86,8 +91,8 @@ def _get_image_artifacts(arch: str | None = None) -> ResolvedImage:
                 "Reinstall with:  quicksand install quicksand-ubuntu"
             )
         raise FileNotFoundError(
-            f"No Ubuntu images found in {_IMAGES_DIR}. "
-            "The package may not have been built correctly."
+            "No Ubuntu images found. If you installed from PyPI, download images with:\n"
+            "  quicksand install ubuntu"
         )
 
     return ResolvedImage(

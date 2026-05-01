@@ -936,17 +936,21 @@ class RuntimeBuildHook(BuildHookInterface):
             self.app.display_info(f"Downloading {installer_url}...")
             urllib.request.urlretrieve(installer_url, installer)
 
-        self.app.display_info("Running QEMU installer (silent)...")
-        subprocess.run([str(installer), "/S"], check=True)
+        # Install to a known directory (avoids needing admin for Program Files)
+        qemu_dir = Path(os.environ.get("TEMP", r"C:\Temp")) / "qemu"
+        self.app.display_info(f"Running QEMU installer (silent) to {qemu_dir}...")
+        subprocess.run([str(installer), "/S", f"/D={qemu_dir}"], check=True)
 
-        # Add to PATH for this process
-        qemu_dir = Path(r"C:\Program Files\qemu")
+        # Fall back to default location if /D= was ignored
+        if not qemu_dir.exists():
+            qemu_dir = Path(r"C:\Program Files\qemu")
+
         if qemu_dir.exists():
             os.environ["PATH"] = str(qemu_dir) + os.pathsep + os.environ.get("PATH", "")
             self.app.display_info(f"Installed QEMU to {qemu_dir}")
         else:
             raise RuntimeError(
-                f"QEMU installer completed but {qemu_dir} not found.\n"
+                "QEMU installer completed but qemu directory not found.\n"
                 "The installer may have failed silently."
             )
 
