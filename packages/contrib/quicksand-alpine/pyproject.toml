@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-alpine"
-version = "0.9.2"
+version = "0.9.3.dev0"
 description = "Pre-built Alpine Linux VM image for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"

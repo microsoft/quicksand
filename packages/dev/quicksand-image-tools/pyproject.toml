@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-image-tools"
-version = "0.5.6"
+version = "0.5.7.dev0"
 description = "Development tools for quicksand - build custom VM images from Dockerfiles"
 readme = "README.md"
 requires-python = ">=3.11"

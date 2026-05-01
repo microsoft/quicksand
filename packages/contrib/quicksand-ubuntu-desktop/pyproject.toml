@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-ubuntu-desktop"
-version = "0.9.1"
+version = "0.9.2.dev0"
 description = "Ubuntu 24.04 Desktop VM (Xfce4) for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
