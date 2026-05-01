@@ -27,10 +27,10 @@ _ARCH_RE = re.compile(r"(?:x86_64|aarch64|arm64|amd64)$")
 
 # Architecture -> all platform tags the wheel should be available for.
 _ARCH_TARGETS: dict[str, list[str]] = {
-    "x86_64": ["linux_x86_64", "macosx_10_13_x86_64", "win_amd64"],
-    "amd64": ["linux_x86_64", "macosx_10_13_x86_64", "win_amd64"],
-    "aarch64": ["linux_aarch64", "macosx_11_0_arm64", "win_arm64"],
-    "arm64": ["linux_aarch64", "macosx_11_0_arm64", "win_arm64"],
+    "x86_64": ["manylinux_2_17_x86_64", "macosx_10_13_x86_64", "win_amd64"],
+    "amd64": ["manylinux_2_17_x86_64", "macosx_10_13_x86_64", "win_amd64"],
+    "aarch64": ["manylinux_2_17_aarch64", "macosx_11_0_arm64", "win_arm64"],
+    "arm64": ["manylinux_2_17_aarch64", "macosx_11_0_arm64", "win_arm64"],
 }
 
 # Packages that are natively built per-platform (not retagged).
