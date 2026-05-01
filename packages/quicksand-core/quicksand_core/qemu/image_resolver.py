@@ -51,6 +51,8 @@ class ImageResolver:
 
         # 4. Entry points (quicksand.images)
         result = self._resolve_base_by_name(image, arch=arch)
+        if result is None and not image.startswith("quicksand-"):
+            result = self._resolve_base_by_name(f"quicksand-{image}", arch=arch)
         if result is not None:
             # Tag with guest_arch when cross-building
             if arch is not None:
