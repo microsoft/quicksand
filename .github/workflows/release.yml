@@ -19,7 +19,6 @@ jobs:
   # --------------------------------------------------------------------------
   validate:
     runs-on: [self-hosted, linux, x64]
-    environment: release
     steps:
     - uses: actions/checkout@v4
     - id: setup-uv
@@ -44,7 +43,6 @@ jobs:
   check:
     needs: [validate]
     runs-on: [self-hosted, linux, x64]
-    environment: release
     strategy:
       fail-fast: true
       matrix:
@@ -102,7 +100,6 @@ jobs:
     needs: [validate, build]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'verify-licenses')
     runs-on: [self-hosted, linux, x64]
-    environment: release
     steps:
     - uses: actions/checkout@v4
     - uses: astral-sh/setup-uv@v5
@@ -170,7 +167,6 @@ jobs:
   release:
     needs: [build, verify-licenses]
     runs-on: ubuntu-latest
-    environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'release') }}
     steps:
     - id: checkout
@@ -229,7 +225,6 @@ jobs:
   # --------------------------------------------------------------------------
   bump:
     runs-on: ubuntu-latest
-    environment: release
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'bump') }}
     needs:
     - release
