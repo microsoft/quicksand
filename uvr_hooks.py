@@ -9,8 +9,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from uv_release.dependencies.shared.hooks import Hooks as ReleaseHook
 from uv_release.dependencies.release.plan import Plan
+from uv_release.dependencies.shared.hooks import Hooks as ReleaseHook
 
 # Canonical runner per architecture — retag only runs on these.
 # x64 images are built natively on Linux; arm64 images are built on
@@ -161,7 +161,6 @@ _TEST_PACKAGES = {
     "quicksand-qemu",
     "quicksand-smb",
 }
-
 
 
 class Hooks(ReleaseHook):
