@@ -163,21 +163,6 @@ _TEST_PACKAGES = {
 }
 
 
-def _latest_release_tag(pkg: str) -> str | None:
-    """Find the latest release tag for a package using git tags."""
-    result = subprocess.run(
-        ["git", "tag", "-l", f"{pkg}/v*", "--sort=-v:refname"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return None
-    for line in result.stdout.strip().split("\n"):
-        tag = line.strip()
-        if tag and ".dev" not in tag and not tag.endswith("-dev"):
-            return tag
-    return None
-
 
 class Hooks(ReleaseHook):
     def post_plan(self, workspace, intent, plan: Plan) -> Plan:
