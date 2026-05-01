@@ -5,6 +5,7 @@ export default withMermaid(
   defineConfig({
     title: 'Quicksand',
     description: 'Full Linux VMs from Python',
+    base: '/quicksand/',
 
     themeConfig: {
       nav: [
