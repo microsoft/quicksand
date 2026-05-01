@@ -181,42 +181,12 @@ def _latest_release_tag(pkg: str) -> str | None:
 
 class Hooks(ReleaseHook):
     def post_plan(self, workspace, intent, plan: Plan) -> Plan:
-        """Skip jobs whose packages didn't change."""
-        changed = {c.package.name for c in plan.changes}
+        """Customize the release plan."""
+        changed = {r.name for r in plan.releases}
         if "test" not in plan.skip and not (changed & _TEST_PACKAGES):
             plan.skip.append("test")
         if "verify-licenses" not in plan.skip and "quicksand-qemu" not in changed:
             plan.skip.append("verify-licenses")
-
-        # Inject per-VM test install commands into the plan.
-        # The workflow downloads built wheels into dist/ via download-artifact.
-        # For unchanged packages we fetch their latest release wheels too.
-        install_lines = [
-            "uv venv --seed",
-            "uv pip install --reinstall pytest pytest-timeout pytest-asyncio",
-        ]
-        for pkg in sorted(_TEST_PACKAGES):
-            if pkg in changed:
-                continue
-            tag = _latest_release_tag(pkg)
-            if not tag:
-                continue
-            dist_name = pkg.replace("-", "_")
-            install_lines.append(
-                f"gh release download {tag} --repo $GITHUB_REPOSITORY"
-                f" --dir dist/"
-                f" --pattern '{dist_name}-*linux_x86_64.whl'"
-                f" --pattern '{dist_name}-*any.whl'"
-                f" --clobber || true"
-            )
-        install_lines.append(
-            "uv pip install --reinstall --find-links dist/"
-            " dist/quicksand-*.whl quicksand-ubuntu quicksand-alpine"
-        )
-        install = "\n".join(install_lines)
-        plan = plan.model_copy(
-            update={"test_install": {vm: install for vm in ("ubuntu", "alpine")}}
-        )
 
         # Inject a platform-filter command after dep downloads.  uv
         # incorrectly picks linux_aarch64 over macosx_arm64 from find-links
