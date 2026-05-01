@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-cua"
-version = "0.3.2"
+version = "0.3.3.dev0"
 description = "Overlay image package for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"

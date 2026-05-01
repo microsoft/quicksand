@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-base-scaffold"
-version = "0.3.3"
+version = "0.3.4.dev0"
 description = "Template base image package for quicksand"
 requires-python = ">=3.11"
 license = "MIT"
