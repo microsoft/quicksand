@@ -24,13 +24,14 @@ class AgentSandbox(Sandbox):
     def __init__(
         self,
         *,
+        image: str = "quicksand-agent",
         progress_callback: Callable[[str, int, int], None] | None = None,
         save: str | None = None,
         workspace: str | Path | None = None,
         **kwargs: Unpack[SandboxConfigParams],
     ) -> None:
-        kwargs.setdefault("image", "quicksand-agent")
         super().__init__(
+            image=image,
             progress_callback=progress_callback,
             save=save,
             workspace=workspace,

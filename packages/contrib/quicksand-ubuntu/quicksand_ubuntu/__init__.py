@@ -121,13 +121,14 @@ class UbuntuSandbox(Sandbox):
     def __init__(
         self,
         *,
+        image: str = "ubuntu",
         progress_callback: Callable[[str, int, int], None] | None = None,
         save: str | None = None,
         workspace: str | Path | None = None,
         **kwargs: Unpack[SandboxConfigParams],
     ) -> None:
-        kwargs.setdefault("image", "ubuntu")
         super().__init__(
+            image=image,
             progress_callback=progress_callback,
             save=save,
             workspace=workspace,

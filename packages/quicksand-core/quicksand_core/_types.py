@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, Protocol, Required, TypedDict, runtime_checkable
+from typing import Literal, Protocol, TypedDict, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -592,15 +592,16 @@ class SandboxConfig(BaseModel):
 class SandboxConfigParams(TypedDict, total=False):
     """TypedDict mirror of :class:`SandboxConfig` for ``Unpack``-based kwargs.
 
-    Kept in sync by the module-level assertion below.
+    ``image`` is intentionally excluded — it is exposed as an explicit
+    parameter on ``Sandbox.__init__`` and its subclasses so they can give it
+    a class-specific default. Kept in sync by the assertion below.
     """
 
-    image: Required[str]
     arch: str | None
     memory: str
     cpus: int
     mounts: list[Mount]
-    port_forwards: list[tuple[int, int]]
+    port_forwards: list[PortForward]
     network_mode: NetworkMode
     extra_qemu_args: list[str]
     boot_timeout: float
@@ -609,7 +610,7 @@ class SandboxConfigParams(TypedDict, total=False):
     enable_display: bool
 
 
-_td_keys = set(SandboxConfigParams.__annotations__)
+_td_keys = set(SandboxConfigParams.__annotations__) | {"image"}
 _bm_keys = set(SandboxConfig.model_fields)
 assert _td_keys == _bm_keys, (
     f"SandboxConfigParams / SandboxConfig out of sync — "

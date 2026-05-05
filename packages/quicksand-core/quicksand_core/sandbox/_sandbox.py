@@ -71,20 +71,14 @@ class Sandbox(
 
     def __init__(
         self,
-        _config: SandboxConfig | None = None,
-        /,
         *,
+        image: str,
         progress_callback: Callable[[str, int, int], None] | None = None,
         save: str | None = None,
         workspace: str | Path | None = None,
         **kwargs: Unpack[SandboxConfigParams],
     ):
-        if _config is not None:
-            if kwargs:
-                raise TypeError("Cannot pass both a SandboxConfig and keyword arguments")
-            self.config = SandboxConfig.model_validate(_config)
-        else:
-            self.config = SandboxConfig.model_validate(kwargs)
+        self.config = SandboxConfig.model_validate({"image": image, **kwargs})
         self._progress_callback = progress_callback
         self._save_name = save
         self._workspace = Path(workspace) if workspace else None

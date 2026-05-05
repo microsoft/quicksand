@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,6 +17,8 @@ class _MockSandbox(_LifecycleMixin):
 
     def __init__(self, execute_fn):
         self._execute_fn = execute_fn
+        self._qmp_checkpoints: list[str] = []
+        self._dynamic_mounts: list = []
 
     # Protocol requirements (flat fields)
     config = None
@@ -36,11 +37,9 @@ class _MockSandbox(_LifecycleMixin):
     _agent_token = None
     _qmp_client = None
     _qmp_port = None
-    _qmp_checkpoints: ClassVar[list[str]] = []
     _vnc_port = None
     _save_name = None
     _workspace = None
-    _dynamic_mounts: ClassVar[list] = []
 
     @property
     def is_running(self) -> bool:

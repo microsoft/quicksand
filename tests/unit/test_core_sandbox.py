@@ -27,10 +27,8 @@ class TestSandboxInit:
 
     def test_sandbox_requires_image(self):
         """Test that Sandbox requires an image kwarg."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError, match="image"):
-            Sandbox()
+        with pytest.raises(TypeError, match="image"):
+            Sandbox()  # ty: ignore[missing-argument]
 
     def test_sandbox_with_progress_callback(self, fake_qcow2):
         """Test Sandbox with progress callback."""

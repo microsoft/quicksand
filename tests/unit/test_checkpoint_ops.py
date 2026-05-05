@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import tarfile
 from pathlib import Path
-from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -156,11 +155,11 @@ class TestHotSave:
             _progress_callback = None
             _save_name = None
             _workspace = None
-            _dynamic_mounts: ClassVar[list] = []
 
             def __init__(self) -> None:
                 from quicksand_core.host import Accelerator
 
+                self._dynamic_mounts: list = []
                 self._is_running = True
                 self._image = ResolvedImage(
                     name="ubuntu",
@@ -322,11 +321,11 @@ class TestCheckpointRevert:
             _progress_callback = None
             _save_name = None
             _workspace = None
-            _dynamic_mounts: ClassVar[list] = []
 
             def __init__(self) -> None:
                 from quicksand_core.host import Accelerator
 
+                self._dynamic_mounts: list = []
                 self._is_running = True
                 self._image = ResolvedImage(
                     name="ubuntu",

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import shlex
-from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,6 +23,7 @@ class _MockSandbox(_MountMixin):
         )
         self._smb_server = None
         self._dynamic_mounts: list[MountHandle] = []
+        self._qmp_checkpoints: list[str] = []
         self._execute_fn = execute_fn
 
     # Protocol requirements (flat fields)
@@ -41,7 +41,6 @@ class _MockSandbox(_MountMixin):
     _agent_token = None
     _qmp_client = None
     _qmp_port = None
-    _qmp_checkpoints: ClassVar[list[str]] = []
     _vnc_port = None
     _save_name = None
     _workspace = None

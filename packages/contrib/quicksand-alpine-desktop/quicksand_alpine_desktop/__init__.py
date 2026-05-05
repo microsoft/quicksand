@@ -80,16 +80,17 @@ class AlpineDesktopSandbox(Sandbox):
     def __init__(
         self,
         *,
+        image: str = "alpine-desktop",
         progress_callback: Callable[[str, int, int], None] | None = None,
         save: str | None = None,
         workspace: str | Path | None = None,
         **kwargs: Unpack[SandboxConfigParams],
     ) -> None:
-        kwargs.setdefault("image", "alpine-desktop")
         kwargs.setdefault("memory", "1G")
         kwargs.setdefault("cpus", 2)
         kwargs.setdefault("enable_display", True)
         super().__init__(
+            image=image,
             progress_callback=progress_callback,
             save=save,
             workspace=workspace,
