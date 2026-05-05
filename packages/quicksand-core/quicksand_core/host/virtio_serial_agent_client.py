@@ -1,7 +1,9 @@
 """Async client for quicksand guest agent over virtio-serial (Unix/TCP socket).
 
-Uses length-prefixed JSON framing over a QEMU chardev socket, bypassing
-the guest networking stack entirely.
+Uses length-prefixed JSON framing over a QEMU chardev socket. A background
+reader task demultiplexes incoming frames by ``id`` into per-request futures
+(or per-stream queues), so caller timeouts and concurrent calls cannot corrupt
+each other's reads.
 
 Frame format:
     ┌──────────┬─────────────────────┐
@@ -32,13 +34,11 @@ _MAX_FRAME_SIZE = 64 * 1024 * 1024  # 64 MB sanity limit
 
 
 def _encode_frame(msg: dict) -> bytes:
-    """Encode a message as a length-prefixed JSON frame."""
     payload = json.dumps(msg, separators=(",", ":")).encode("utf-8")
     return struct.pack(_HEADER_FMT, len(payload)) + payload
 
 
 async def _read_frame(reader: asyncio.StreamReader) -> dict:
-    """Read one length-prefixed JSON frame from the stream."""
     header = await reader.readexactly(_HEADER_SIZE)
     (length,) = struct.unpack(_HEADER_FMT, header)
     if length > _MAX_FRAME_SIZE:
@@ -51,8 +51,11 @@ class VirtioSerialAgentClient:
     """Async client for the quicksand guest agent over virtio-serial.
 
     Communicates via QEMU's chardev Unix domain socket (or TCP on Windows)
-    using length-prefixed JSON framing. Provides the same interface as
-    QuicksandGuestAgentClient.
+    using length-prefixed JSON framing. After authentication, a background
+    reader task demultiplexes responses by ``id``: one-shot calls register
+    a future, streaming calls register a queue. Late frames whose ``id`` has
+    no waiter (e.g. response to a request whose caller already timed out)
+    are dropped at the reader.
     """
 
     def __init__(self, socket_path: str | Path, token: str):
@@ -60,12 +63,15 @@ class VirtioSerialAgentClient:
         self._token = token
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
-        self._lock: asyncio.Lock | None = None
+        self._writer_lock: asyncio.Lock | None = None
+        self._reader_task: asyncio.Task[None] | None = None
+        self._pending: dict[int, asyncio.Future[dict]] = {}
+        self._pending_streams: dict[int, asyncio.Queue[dict]] = {}
         self._request_id = 0
 
     @property
     def is_connected(self) -> bool:
-        return self._writer is not None
+        return self._writer is not None and self._reader_task is not None
 
     def _next_id(self) -> int:
         self._request_id += 1
@@ -78,8 +84,10 @@ class VirtioSerialAgentClient:
     ) -> None:
         """Connect to the agent via the chardev socket and authenticate.
 
-        Retries until the socket is ready (QEMU creates it at launch) and
-        the guest agent sends a valid authentication response.
+        Auth is content-keyed (the agent's authenticated reply has no ``id``),
+        so it runs synchronously on the bare reader. Once auth succeeds the
+        demux reader task takes ownership of ``self._reader`` and all later
+        request/response routing goes through it.
 
         Once connected to the QEMU chardev socket, the connection is kept
         open across auth retries.  Disconnecting causes QEMU to stop
@@ -145,6 +153,11 @@ class VirtioSerialAgentClient:
                         logger.debug("Drained %d stale auth responses", drained)
                     # Reset request ID so future requests start fresh
                     self._request_id = 0
+                    # Spawn the demux reader. From here on, only this task
+                    # touches ``self._reader``; callers wait on per-id futures
+                    # or queues registered in ``_pending`` / ``_pending_streams``.
+                    self._writer_lock = asyncio.Lock()
+                    self._reader_task = asyncio.create_task(self._read_loop())
                     return
 
                 raise RuntimeError("Authentication rejected by agent")
@@ -173,6 +186,52 @@ class VirtioSerialAgentClient:
             f"Last error: {last_error}"
         )
 
+    async def _read_loop(self) -> None:
+        """Background task: demultiplex incoming frames by ``id``.
+
+        Stream requests register an ``asyncio.Queue`` (frames pushed in order,
+        terminated by an ``exit`` or ``error`` frame). One-shot requests
+        register an ``asyncio.Future`` (resolved by the first matching frame).
+        Frames whose ``id`` has no waiter are dropped.
+        """
+        assert self._reader is not None
+        try:
+            while True:
+                frame = await _read_frame(self._reader)
+                frame_id = frame.get("id")
+                if not isinstance(frame_id, int):
+                    logger.debug("Dropping frame without integer id: %r", frame)
+                    continue
+                queue = self._pending_streams.get(frame_id)
+                if queue is not None:
+                    queue.put_nowait(frame)
+                    continue
+                fut = self._pending.pop(frame_id, None)
+                if fut is not None and not fut.done():
+                    fut.set_result(frame)
+                else:
+                    logger.debug("Dropping frame with no waiter id=%d", frame_id)
+        except asyncio.IncompleteReadError:
+            self._fail_pending(ConnectionResetError("agent connection closed"))
+        except (ConnectionResetError, OSError) as e:
+            self._fail_pending(e)
+        except asyncio.CancelledError:
+            self._fail_pending(ConnectionResetError("client closed"))
+            raise
+        except Exception as e:  # pragma: no cover — unexpected
+            logger.exception("Unexpected error in agent reader loop")
+            self._fail_pending(e)
+
+    def _fail_pending(self, exc: BaseException) -> None:
+        """Wake every outstanding caller with a connection error."""
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(exc)
+        self._pending.clear()
+        for queue in self._pending_streams.values():
+            queue.put_nowait({"error": {"message": f"Connection error: {exc}"}})
+        self._pending_streams.clear()
+
     def _close_transport(self) -> None:
         if self._writer:
             with contextlib.suppress(Exception):
@@ -181,6 +240,11 @@ class VirtioSerialAgentClient:
         self._writer = None
 
     async def close(self) -> None:
+        if self._reader_task is not None:
+            self._reader_task.cancel()
+            with contextlib.suppress(BaseException):
+                await self._reader_task
+            self._reader_task = None
         self._close_transport()
 
     async def send_request(
@@ -189,46 +253,47 @@ class VirtioSerialAgentClient:
         params: dict[str, Any],
         timeout: float = Timeouts.GUEST_AGENT_REQUEST,
     ) -> dict[str, Any]:
-        if self._writer is None or self._reader is None:
+        if self._writer is None or self._reader_task is None or self._writer_lock is None:
             raise RuntimeError("Not connected to agent")
 
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        async with self._lock:
-            method_map = {
-                QuicksandGuestAgentMethod.EXECUTE: "execute",
-                QuicksandGuestAgentMethod.PING: "ping",
-            }
-            method_name = method_map.get(method)
-            if method_name is None:
-                return {"error": {"message": f"Unknown method: {method}"}}
+        method_map = {
+            QuicksandGuestAgentMethod.EXECUTE: "execute",
+            QuicksandGuestAgentMethod.PING: "ping",
+        }
+        method_name = method_map.get(method)
+        if method_name is None:
+            return {"error": {"message": f"Unknown method: {method}"}}
 
-            msg = {"id": self._next_id(), "method": method_name, "params": params}
+        request_id = self._next_id()
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future[dict] = loop.create_future()
+        # Register BEFORE writing so a fast reply can't arrive before we have
+        # a slot in ``_pending``.
+        self._pending[request_id] = future
 
-            try:
+        msg = {"id": request_id, "method": method_name, "params": params}
+
+        try:
+            async with self._writer_lock:
                 self._writer.write(_encode_frame(msg))
                 await self._writer.drain()
+        except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            self._pending.pop(request_id, None)
+            return {"error": {"message": f"Connection error: {e}"}}
 
-                response = await asyncio.wait_for(_read_frame(self._reader), timeout=timeout)
+        try:
+            response = await asyncio.wait_for(future, timeout=timeout)
+        except TimeoutError:
+            # Caller gives up: pop our slot so a late reply is dropped at
+            # the reader instead of poisoning the next call's read.
+            self._pending.pop(request_id, None)
+            return {"error": {"message": f"Request timed out after {timeout}s"}}
+        except (ConnectionResetError, OSError) as e:
+            return {"error": {"message": f"Connection error: {e}"}}
 
-                resp_id = response.get("id")
-                if resp_id != msg["id"]:
-                    return {
-                        "error": {
-                            "message": (
-                                f"Response ID mismatch: expected {msg['id']}, got {resp_id}"
-                            )
-                        }
-                    }
-
-                if "error" in response:
-                    return {"error": response["error"]}
-                return {"result": response.get("result", response)}
-
-            except TimeoutError:
-                return {"error": {"message": f"Request timed out after {timeout}s"}}
-            except (ConnectionResetError, BrokenPipeError, OSError) as e:
-                return {"error": {"message": f"Connection error: {e}"}}
+        if "error" in response:
+            return {"error": response["error"]}
+        return {"result": response.get("result", response)}
 
     async def send_stream_request(
         self,
@@ -237,66 +302,63 @@ class VirtioSerialAgentClient:
         on_stdout: Callable[[str], None] | None = None,
         on_stderr: Callable[[str], None] | None = None,
     ) -> dict[str, Any]:
-        if self._writer is None or self._reader is None:
+        if self._writer is None or self._reader_task is None or self._writer_lock is None:
             raise RuntimeError("Not connected to agent")
 
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        async with self._lock:
-            msg = {"id": self._next_id(), "method": "execute_stream", "params": params}
-            stdout_parts: list[str] = []
-            stderr_parts: list[str] = []
-            exit_code = -1
+        request_id = self._next_id()
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._pending_streams[request_id] = queue
 
-            try:
+        msg = {"id": request_id, "method": "execute_stream", "params": params}
+
+        try:
+            async with self._writer_lock:
                 self._writer.write(_encode_frame(msg))
                 await self._writer.drain()
+        except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            self._pending_streams.pop(request_id, None)
+            return {"error": {"message": f"Stream connection error: {e}"}}
 
-                deadline = asyncio.get_event_loop().time() + timeout
-                while True:
-                    remaining = deadline - asyncio.get_event_loop().time()
-                    if remaining <= 0:
-                        return {"error": {"message": f"Stream timed out after {timeout}s"}}
+        try:
+            return await asyncio.wait_for(
+                self._consume_stream(queue, on_stdout, on_stderr),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            return {"error": {"message": f"Stream timed out after {timeout}s"}}
+        finally:
+            # Drop any further frames for this id (the reader will log+skip
+            # them once we're no longer registered).
+            self._pending_streams.pop(request_id, None)
 
-                    frame = await asyncio.wait_for(_read_frame(self._reader), timeout=remaining)
-
-                    frame_id = frame.get("id")
-                    if frame_id != msg["id"]:
-                        return {
-                            "error": {
-                                "message": (
-                                    f"Stream response ID mismatch: expected {msg['id']}, "
-                                    f"got {frame_id}"
-                                )
-                            }
-                        }
-
-                    stream = frame.get("stream")
-                    if stream == "stdout":
-                        data = frame.get("data", "")
-                        stdout_parts.append(data)
-                        if on_stdout:
-                            on_stdout(data)
-                    elif stream == "stderr":
-                        data = frame.get("data", "")
-                        stderr_parts.append(data)
-                        if on_stderr:
-                            on_stderr(data)
-                    elif stream == "exit":
-                        exit_code = frame.get("exit_code", -1)
-                        break
-                    elif "error" in frame:
-                        return {"error": frame["error"]}
-
+    async def _consume_stream(
+        self,
+        queue: asyncio.Queue[dict],
+        on_stdout: Callable[[str], None] | None,
+        on_stderr: Callable[[str], None] | None,
+    ) -> dict[str, Any]:
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+        while True:
+            frame = await queue.get()
+            if "error" in frame:
+                return {"error": frame["error"]}
+            stream = frame.get("stream")
+            if stream == "stdout":
+                data = frame.get("data", "")
+                stdout_parts.append(data)
+                if on_stdout:
+                    on_stdout(data)
+            elif stream == "stderr":
+                data = frame.get("data", "")
+                stderr_parts.append(data)
+                if on_stderr:
+                    on_stderr(data)
+            elif stream == "exit":
                 return {
                     "result": {
                         "stdout": "".join(stdout_parts),
                         "stderr": "".join(stderr_parts),
-                        "exit_code": exit_code,
+                        "exit_code": frame.get("exit_code", -1),
                     }
                 }
-
-            except TimeoutError:
-                return {"error": {"message": f"Stream timed out after {timeout}s"}}
-            except (ConnectionResetError, BrokenPipeError, OSError) as e:
-                return {"error": {"message": f"Stream connection error: {e}"}}
