@@ -14,7 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **CI:** Restore the `build` poe task wiring that the previous release inadvertently broke
 
 ### Changed
-- **quicksand-core / contrib subclasses:** `image` is now an explicit required keyword on `Sandbox.__init__`; subclasses (`UbuntuSandbox`, `AlpineSandbox`, `CuaSandbox`, `AgentSandbox`, …) expose `image` as an explicit kwarg with a class-specific default. No behavior change at runtime — `image` was effectively required already — but `ty 0.0.34` now enforces it statically.
+- **quicksand-core:** `image` is now an explicit required keyword on `Sandbox.__init__`; the `image` field was removed from `SandboxConfigParams` so subclasses can declare their own default. Runtime behavior is unchanged — `image` was effectively required already — but `ty 0.0.34` now enforces it statically.
+- **contrib / dev subclasses:** `UbuntuSandbox`, `UbuntuDesktopSandbox`, `AlpineSandbox`, `AlpineDesktopSandbox`, `AgentSandbox`, `CuaSandbox`, `QuicksandBaseScaffoldSandbox`, and `QuicksandOverlayScaffoldSandbox` all expose `image` as an explicit keyword argument with a class-specific default instead of injecting it via `**kwargs`. Existing call sites continue to work unchanged.
+
+### Released (no user-visible changes)
+- **quicksand-build-tools, quicksand-image-tools, quicksand-qemu, quicksand-smb:** version bumps only — needed to pick up the `quicksand-core` dep pin update.
 
 ## [v0.11.5] - 2026-04-30
 
