@@ -96,7 +96,7 @@ clean = "python scripts/clean.py"
 "docs:dev" = { shell = "npx vitepress dev docs" }
 "docs:build" = { shell = "npx vitepress build docs" }
 "docs:preview" = { shell = "npx vitepress preview docs" }
-build = "uv run uvr build --rebuild-all"
+build = "uv run uvr build --all-packages"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
