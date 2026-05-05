@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import shlex
 from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -369,3 +370,96 @@ class TestCifsOpts:
         """Test that cifs_opts produces sec=none for empty password."""
         result = MountOptions.cifs_opts("guest", "")
         assert result == "username=guest,password=,sec=none,vers=3.0"
+
+
+_PATHS_WITH_SPECIAL_CHARS = [
+    "/sessions/1/mounts/path with whitespace",
+    "/sessions/1/mounts/folder (parens)",
+    "/sessions/1/mounts/sam's-files",
+    "/sessions/1/mounts/日本語",
+]
+
+
+class TestSpecialCharsInPath:
+    """Mount/umount commands preserve the guest path verbatim, even when it
+    contains shell-special characters that would otherwise be split or
+    interpreted by the guest shell."""
+
+    @pytest.mark.parametrize("path", _PATHS_WITH_SPECIAL_CHARS)
+    @pytest.mark.asyncio
+    async def test_cifs_mount_preserves_path(self, path):
+        commands = []
+
+        def mock_execute(cmd: str, timeout: float) -> ExecuteResult:
+            commands.append(cmd)
+            return ExecuteResult(stdout="", stderr="", exit_code=0)
+
+        mock_server = MagicMock()
+        mock_server.credentials = ("guest", "")
+
+        sb = _MockSandbox(mock_execute, [])
+        sb._smb_server = mock_server
+
+        await sb._mount_cifs_share("QUICKSAND0", path, False)
+
+        mount_cmd = next(c for c in commands if "mount -t cifs" in c)
+        assert path in shlex.split(mount_cmd), mount_cmd
+
+    @pytest.mark.parametrize("path", _PATHS_WITH_SPECIAL_CHARS)
+    @pytest.mark.asyncio
+    async def test_cifs_mkdir_preserves_path(self, path):
+        commands = []
+
+        def mock_execute(cmd: str, timeout: float) -> ExecuteResult:
+            commands.append(cmd)
+            return ExecuteResult(stdout="", stderr="", exit_code=0)
+
+        mock_server = MagicMock()
+        mock_server.credentials = ("guest", "")
+
+        sb = _MockSandbox(mock_execute, [])
+        sb._smb_server = mock_server
+
+        await sb._mount_cifs_share("QUICKSAND0", path, False)
+
+        mkdir_cmd = next(c for c in commands if "mkdir -p" in c)
+        assert path in shlex.split(mkdir_cmd), mkdir_cmd
+
+    @pytest.mark.parametrize("path", _PATHS_WITH_SPECIAL_CHARS)
+    @pytest.mark.asyncio
+    async def test_unmount_preserves_path(self, path):
+        commands = []
+
+        def mock_execute(cmd: str, timeout: float) -> ExecuteResult:
+            commands.append(cmd)
+            return ExecuteResult(stdout="", stderr="", exit_code=0)
+
+        sb = _MockSandbox(mock_execute, [])
+        sb._smb_server = MagicMock()
+
+        handle = MountHandle(
+            host="/dummy/host",
+            guest=path,
+            readonly=False,
+            _share_name="QUICKSAND0",
+        )
+        await sb.unmount(handle)
+
+        umount_cmd = next(c for c in commands if "umount" in c)
+        assert path in shlex.split(umount_cmd), umount_cmd
+
+    @pytest.mark.parametrize("path", _PATHS_WITH_SPECIAL_CHARS)
+    @pytest.mark.asyncio
+    async def test_9p_mount_preserves_path(self, path):
+        commands = []
+
+        def mock_execute(cmd: str, timeout: float) -> ExecuteResult:
+            commands.append(cmd)
+            return ExecuteResult(stdout="", stderr="", exit_code=0)
+
+        sb = _MockSandbox(mock_execute, [])
+
+        await sb._mount_9p_share("pb9p0", path, False)
+
+        mount_cmd = next(c for c in commands if "mount -t 9p" in c)
+        assert path in shlex.split(mount_cmd), mount_cmd

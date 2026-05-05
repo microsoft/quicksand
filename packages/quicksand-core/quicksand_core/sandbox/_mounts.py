@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shlex
 
 from .._types import MountHandle, MountOptions, NetworkConstants, NetworkMode, Timeouts
 from ..host.smb import SMBServer, create_smb_server
@@ -39,12 +40,13 @@ class _MountMixin(_SandboxProtocol):
     async def _mount_9p_share(self, tag: str, guest_path: str, readonly: bool) -> None:
         """Mount a virtio-9p share inside the guest."""
         await self.execute(
-            f"sudo mkdir -p {guest_path}",
+            f"sudo mkdir -p {shlex.quote(guest_path)}",
             timeout=Timeouts.MOUNT_OPERATION,
         )
         ro_opt = ",ro" if readonly else ""
         result = await self.execute(
-            f"sudo mount -t 9p -o trans=virtio,version=9p2000.L{ro_opt} {tag} {guest_path}",
+            f"sudo mount -t 9p -o trans=virtio,version=9p2000.L{ro_opt}"
+            f" {shlex.quote(tag)} {shlex.quote(guest_path)}",
             timeout=Timeouts.MOUNT_OPERATION,
         )
         if result.exit_code != 0:
@@ -57,7 +59,7 @@ class _MountMixin(_SandboxProtocol):
         assert self._smb_server is not None
 
         await self.execute(
-            f"sudo mkdir -p {guest_path}",
+            f"sudo mkdir -p {shlex.quote(guest_path)}",
             timeout=Timeouts.MOUNT_OPERATION,
         )
 
@@ -77,8 +79,9 @@ class _MountMixin(_SandboxProtocol):
         username, password = self._smb_server.credentials
         cifs_opts = MountOptions.cifs_opts(username, password)
         mount_cmd = (
-            f"sudo mount -t cifs //{gateway}/{share_name} {guest_path} "
-            f"-o {cifs_opts},port={port}{ro_opt}"
+            f"sudo mount -t cifs //{gateway}/{shlex.quote(share_name)}"
+            f" {shlex.quote(guest_path)}"
+            f" -o {shlex.quote(cifs_opts)},port={port}{ro_opt}"
         )
 
         last_error = ""
@@ -141,13 +144,13 @@ class _MountMixin(_SandboxProtocol):
             for guest_path in reversed(mounted_9p):
                 with contextlib.suppress(Exception):
                     await self.execute(
-                        f"sudo umount {guest_path}",
+                        f"sudo umount {shlex.quote(guest_path)}",
                         timeout=Timeouts.MOUNT_OPERATION,
                     )
             for share_name, guest_path in reversed(mounted_cifs):
                 with contextlib.suppress(Exception):
                     await self.execute(
-                        f"sudo umount {guest_path}",
+                        f"sudo umount {shlex.quote(guest_path)}",
                         timeout=Timeouts.MOUNT_OPERATION,
                     )
                 with contextlib.suppress(Exception):
@@ -209,7 +212,10 @@ class _MountMixin(_SandboxProtocol):
         Args:
             handle: The MountHandle returned by mount().
         """
-        result = await self.execute(f"sudo umount {handle.guest}", timeout=Timeouts.MOUNT_OPERATION)
+        result = await self.execute(
+            f"sudo umount {shlex.quote(handle.guest)}",
+            timeout=Timeouts.MOUNT_OPERATION,
+        )
         if result.exit_code != 0:
             logger.warning(
                 "umount %s failed: %s",
@@ -240,7 +246,7 @@ class _MountMixin(_SandboxProtocol):
         for handle in reversed(self._dynamic_mounts):
             with contextlib.suppress(Exception):
                 await self.execute(
-                    f"sudo umount {handle.guest}",
+                    f"sudo umount {shlex.quote(handle.guest)}",
                     timeout=Timeouts.MOUNT_OPERATION,
                 )
         self._dynamic_mounts.clear()
