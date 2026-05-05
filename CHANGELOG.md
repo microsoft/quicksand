@@ -4,6 +4,18 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.7] - 2026-05-05
+
+### Fixed
+- **quicksand-core:** Demultiplex virtio-serial agent responses by request id — concurrent requests on the agent client no longer race for replies
+- **quicksand-core:** Shell-quote host and guest paths in mount/umount commands — paths with spaces or special characters now mount correctly
+- **quick-sandbox:** Fall back to legacy `quickand-` entry-point prefix when the canonical name is not found
+- **build:** Use manylinux tags in retag targets so wheels publish with the correct compatibility tags
+- **CI:** Restore the `build` poe task wiring that the previous release inadvertently broke
+
+### Changed
+- **quicksand-core / contrib subclasses:** `image` is now an explicit required keyword on `Sandbox.__init__`; subclasses (`UbuntuSandbox`, `AlpineSandbox`, `CuaSandbox`, `AgentSandbox`, …) expose `image` as an explicit kwarg with a class-specific default. No behavior change at runtime — `image` was effectively required already — but `ty 0.0.34` now enforces it statically.
+
 ## [v0.11.5] - 2026-04-30
 
 ### Added
