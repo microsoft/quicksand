@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import socket
 import struct
 from collections.abc import Awaitable, Callable
-from pathlib import Path
+from unittest.mock import patch
 
-import pytest
 from quicksand_core._types import QuicksandGuestAgentMethod
 from quicksand_core.host.virtio_serial_agent_client import VirtioSerialAgentClient
 
@@ -41,50 +41,75 @@ def _ok(request_id: int, stdout: str = "") -> dict:
 Handler = Callable[[dict], Awaitable[list[dict]]]
 
 
+def _socketpair() -> tuple[socket.socket, socket.socket]:
+    """Return a connected non-blocking socket pair (no filesystem path)."""
+    a, b = socket.socketpair()
+    a.setblocking(False)
+    b.setblocking(False)
+    return a, b
+
+
+def _patch_connect(client_sock: socket.socket):
+    """Patch ``open_unix_connection`` so the client connects via *client_sock*."""
+
+    async def _fake(*_a, **_kw):
+        return await asyncio.open_connection(sock=client_sock)
+
+    return patch("asyncio.open_unix_connection", side_effect=_fake)
+
+
 class FakeAgent:
-    """Server speaking the agent wire protocol on a Unix socket.
+    """Speaks the agent wire protocol over an in-memory socketpair.
 
     Auto-replies to ``authenticate`` with an id-less authenticated frame.
     Dispatches every other request frame to ``handler`` and writes the
     returned frames back to the same connection.
     """
 
-    def __init__(self, sock_path: Path, handler: Handler):
-        self._sock_path = sock_path
+    def __init__(self, handler: Handler):
         self._handler = handler
-        self._server: asyncio.AbstractServer | None = None
-        self._writers: list[asyncio.StreamWriter] = []
+        self._client_sock: socket.socket | None = None
+        self._srv_writer: asyncio.StreamWriter | None = None
+        self._serve_task: asyncio.Task | None = None
         self._handler_tasks: list[asyncio.Task] = []
         self.received_requests: list[dict] = []
 
     async def __aenter__(self) -> FakeAgent:
-        self._server = await asyncio.start_unix_server(self._on_connect, path=str(self._sock_path))
+        c, s = _socketpair()
+        self._client_sock = c
+        reader, writer = await asyncio.open_connection(sock=s)
+        self._srv_writer = writer
+        self._serve_task = asyncio.create_task(self._serve(reader, writer))
         return self
 
     async def __aexit__(self, *_exc_info) -> None:
-        for task in self._handler_tasks:
-            task.cancel()
-        for task in self._handler_tasks:
+        if self._serve_task:
+            self._serve_task.cancel()
             with contextlib.suppress(BaseException):
-                await task
-        for writer in self._writers:
+                await self._serve_task
+        for t in self._handler_tasks:
+            t.cancel()
+        for t in self._handler_tasks:
+            with contextlib.suppress(BaseException):
+                await t
+        if self._srv_writer:
             with contextlib.suppress(Exception):
-                writer.close()
-        for writer in self._writers:
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
-        if self._server is not None:
-            self._server.close()
-            await self._server.wait_closed()
+                self._srv_writer.close()
+        if self._client_sock:
+            with contextlib.suppress(OSError):
+                self._client_sock.close()
+
+    @property
+    def client_sock(self) -> socket.socket:
+        assert self._client_sock is not None
+        return self._client_sock
 
     async def disconnect_all(self) -> None:
-        """Close every active server-side connection."""
-        for writer in list(self._writers):
-            with contextlib.suppress(Exception):
-                writer.close()
+        """Close the server-side connection."""
+        if self._srv_writer:
+            self._srv_writer.close()
 
-    async def _on_connect(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        self._writers.append(writer)
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             while True:
                 msg = await _read_frame(reader)
@@ -110,14 +135,10 @@ class FakeAgent:
                 return
 
 
-@pytest.fixture
-def sock_path(tmp_path: Path) -> Path:
-    return tmp_path / "agent.sock"
-
-
-async def _connected_client(sock_path: Path) -> VirtioSerialAgentClient:
-    client = VirtioSerialAgentClient(sock_path, token=_TEST_TOKEN)
-    await client.connect(timeout=5.0)
+async def _connected_client(agent: FakeAgent) -> VirtioSerialAgentClient:
+    client = VirtioSerialAgentClient("/unused", token=_TEST_TOKEN)
+    with _patch_connect(agent.client_sock):
+        await client.connect(timeout=5.0)
     return client
 
 
@@ -126,24 +147,25 @@ async def _connected_client(sock_path: Path) -> VirtioSerialAgentClient:
 # ---------------------------------------------------------------------------
 
 
-async def test_wrong_id_frame_does_not_raise_mismatch(tmp_path: Path) -> None:
+async def test_wrong_id_frame_does_not_raise_mismatch() -> None:
     """A frame whose id matches no outstanding request is dropped at the
     reader; the caller times out without surfacing 'Response ID mismatch'."""
 
-    async def fake_agent(_reader, writer):
-        for msg in [
-            {"result": {"authenticated": True}},
-            {"id": 99, "result": {"stdout": "", "stderr": "", "exit_code": 0}},
-        ]:
-            b = json.dumps(msg).encode()
-            writer.write(struct.pack("!I", len(b)) + b)
-        await writer.drain()
+    c, s = _socketpair()
+    _, srv_writer = await asyncio.open_connection(sock=s)
 
-    sock = tmp_path / "agent.sock"
-    server = await asyncio.start_unix_server(fake_agent, path=str(sock))
-    client = VirtioSerialAgentClient(sock, token=_TEST_TOKEN)
+    # Write auth reply + a mismatched-id response immediately.
+    for msg in [
+        {"result": {"authenticated": True}},
+        {"id": 99, "result": {"stdout": "", "stderr": "", "exit_code": 0}},
+    ]:
+        srv_writer.write(_encode_frame(msg))
+    await srv_writer.drain()
+
+    client = VirtioSerialAgentClient("/unused", token=_TEST_TOKEN)
     try:
-        await client.connect(timeout=5.0)
+        with _patch_connect(c):
+            await client.connect(timeout=5.0)
         result = await client.send_request(
             QuicksandGuestAgentMethod.EXECUTE,
             {"command": "x"},
@@ -153,10 +175,10 @@ async def test_wrong_id_frame_does_not_raise_mismatch(tmp_path: Path) -> None:
         assert "Response ID mismatch" not in result["error"]["message"], result
     finally:
         await client.close()
-        server.close()
+        srv_writer.close()
 
 
-async def test_concurrent_calls_each_get_their_own_response(sock_path: Path) -> None:
+async def test_concurrent_calls_each_get_their_own_response() -> None:
     """Five concurrent calls; the agent replies in reverse-id order so wire
     order is the opposite of call order. Each caller receives its own
     response, routed by id."""
@@ -169,8 +191,8 @@ async def test_concurrent_calls_each_get_their_own_response(sock_path: Path) -> 
         await asyncio.sleep(delay)
         return [_ok(msg["id"], stdout=f"id={msg['id']}")]
 
-    async with FakeAgent(sock_path, handler):
-        client = await _connected_client(sock_path)
+    async with FakeAgent(handler) as agent:
+        client = await _connected_client(agent)
         try:
             results = await asyncio.gather(
                 *[
@@ -190,7 +212,7 @@ async def test_concurrent_calls_each_get_their_own_response(sock_path: Path) -> 
         assert r["result"]["stdout"] == f"id={i}"
 
 
-async def test_timeout_does_not_poison_subsequent_calls(sock_path: Path) -> None:
+async def test_timeout_does_not_poison_subsequent_calls() -> None:
     """Request A times out on the host; its late reply is dropped at the
     reader. Request B's reply is delivered correctly."""
 
@@ -199,8 +221,8 @@ async def test_timeout_does_not_poison_subsequent_calls(sock_path: Path) -> None
             await asyncio.sleep(0.5)
         return [_ok(msg["id"], stdout=f"id={msg['id']}")]
 
-    async with FakeAgent(sock_path, handler):
-        client = await _connected_client(sock_path)
+    async with FakeAgent(handler) as agent:
+        client = await _connected_client(agent)
         try:
             r1 = await client.send_request(
                 QuicksandGuestAgentMethod.EXECUTE,
@@ -221,7 +243,7 @@ async def test_timeout_does_not_poison_subsequent_calls(sock_path: Path) -> None
     assert r2["result"]["stdout"] == "id=2"
 
 
-async def test_connection_drop_fails_pending_callers_fast(sock_path: Path) -> None:
+async def test_connection_drop_fails_pending_callers_fast() -> None:
     """When the agent disconnects mid-request, the pending caller wakes up
     with a connection error well before the request timeout would fire."""
 
@@ -229,8 +251,8 @@ async def test_connection_drop_fails_pending_callers_fast(sock_path: Path) -> No
         await asyncio.sleep(10)
         return [_ok(msg["id"])]
 
-    async with FakeAgent(sock_path, handler) as agent:
-        client = await _connected_client(sock_path)
+    async with FakeAgent(handler) as agent:
+        client = await _connected_client(agent)
         try:
 
             async def disconnect_after_delay():
@@ -256,7 +278,7 @@ async def test_connection_drop_fails_pending_callers_fast(sock_path: Path) -> No
     assert elapsed < 1.0, f"Caller waited {elapsed:.2f}s; should fail fast"
 
 
-async def test_stream_request_accumulates_multi_frame_output(sock_path: Path) -> None:
+async def test_stream_request_accumulates_multi_frame_output() -> None:
     """A streaming request emits multiple frames sharing one id; the client
     accumulates stdout/stderr across frames, invokes per-chunk callbacks,
     and terminates on the exit frame."""
@@ -272,8 +294,8 @@ async def test_stream_request_accumulates_multi_frame_output(sock_path: Path) ->
             {"id": rid, "stream": "exit", "exit_code": 0},
         ]
 
-    async with FakeAgent(sock_path, handler):
-        client = await _connected_client(sock_path)
+    async with FakeAgent(handler) as agent:
+        client = await _connected_client(agent)
         try:
             result = await client.send_stream_request(
                 {"command": "x"},
