@@ -4,6 +4,22 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.7] - 2026-05-05
+
+### Fixed
+- **quicksand-core:** Demultiplex virtio-serial agent responses by request id — concurrent requests on the agent client no longer race for replies
+- **quicksand-core:** Shell-quote host and guest paths in mount/umount commands — paths with spaces or special characters now mount correctly
+- **quick-sandbox:** Fall back to legacy `quickand-` entry-point prefix when the canonical name is not found
+- **build:** Use manylinux tags in retag targets so wheels publish with the correct compatibility tags
+- **CI:** Restore the `build` poe task wiring that the previous release inadvertently broke
+
+### Changed
+- **quicksand-core:** `image` is now an explicit required keyword on `Sandbox.__init__`; the `image` field was removed from `SandboxConfigParams` so subclasses can declare their own default. Runtime behavior is unchanged — `image` was effectively required already — but `ty 0.0.34` now enforces it statically.
+- **contrib / dev subclasses:** `UbuntuSandbox`, `UbuntuDesktopSandbox`, `AlpineSandbox`, `AlpineDesktopSandbox`, `AgentSandbox`, `CuaSandbox`, `QuicksandBaseScaffoldSandbox`, and `QuicksandOverlayScaffoldSandbox` all expose `image` as an explicit keyword argument with a class-specific default instead of injecting it via `**kwargs`. Existing call sites continue to work unchanged.
+
+### Released (no user-visible changes)
+- **quicksand-build-tools, quicksand-image-tools, quicksand-qemu, quicksand-smb:** version bumps only — needed to pick up the `quicksand-core` dep pin update.
+
 ## [v0.11.5] - 2026-04-30
 
 ### Added
