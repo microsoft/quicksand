@@ -4,6 +4,14 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.8] - 2026-05-06
+
+### Fixed
+- **quicksand-core:** Kill QEMU when the parent Python process dies (Ctrl+C, crash, `kill -9`, OOM). A tiny launcher between the parent and QEMU sees parent death via stdin EOF and tears the VM down, preventing leaked RAM and forwarded ports.
+
+### Released (no user-visible changes)
+- **quick-sandbox, quicksand-agent, quicksand-alpine, quicksand-alpine-desktop, quicksand-base-scaffold, quicksand-cua, quicksand-image-tools, quicksand-overlay-scaffold, quicksand-ubuntu, quicksand-ubuntu-desktop:** version bumps only — needed to pick up the `quicksand-core` dep pin update.
+
 ## [v0.11.7] - 2026-05-05
 
 ### Fixed
