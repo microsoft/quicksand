@@ -116,13 +116,21 @@ class BinaryBundler:
         Clears library path env vars to force using only bundled libs,
         then runs the binary with --version.
 
-        On Linux, additionally re-runs ``ldd`` against the bundled binary
-        and asserts every NEEDED entry resolves to either a bundled lib
-        (under ``bin_dir``) or a SYSTEM_LIBS-blocklist lib.  Without this,
-        a ``--version`` run on the build machine succeeds even when libs
-        the bundler missed are silently picked up from ``/usr/lib`` via
-        ``/etc/ld.so.cache`` — producing wheels that break on hosts that
-        don't happen to have those libs installed.
+        Additionally runs a platform-specific isolation check that
+        catches the failure mode where the bundler missed a lib but the
+        ``--version`` run still succeeds because the build machine has
+        the lib installed system-wide:
+
+        - **Linux**: re-runs ``ldd`` and asserts every NEEDED entry
+          resolves under ``bin_dir`` or matches the SYSTEM_LIBS
+          blocklist.
+        - **macOS**: parses ``otool -L`` and asserts every load command
+          is ``@loader_path/...``, ``/usr/lib/...``, or
+          ``/System/Library/...``.  Anything from ``/opt/homebrew/`` or
+          similar means the bundler missed a dylib.
+        - **Windows**: re-runs ``--version`` with PATH scrubbed to just
+          ``%SystemRoot%\\System32`` so the loader can only resolve DLLs
+          via the binary's app-dir (``bin_dir``) or System32.
         """
         env = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_LIBRARY"))}
 
@@ -155,8 +163,13 @@ class BinaryBundler:
                 "A required library dependency was not bundled correctly."
             )
 
-        if platform.system().lower() == "linux":
+        system = platform.system().lower()
+        if system == "linux":
             self._verify_linux_isolation(binary, bin_dir)
+        elif system == "darwin":
+            self._verify_macos_isolation(binary, bin_dir)
+        elif system == "windows":
+            self._verify_windows_isolation(binary, bin_dir)
 
         self.app.display_info(f"Verified: {binary.name}")
 
@@ -221,6 +234,92 @@ class BinaryBundler:
                 f"Verification of bundled {binary.name} failed:\n"
                 + "\n".join(msgs)
                 + "\nThe wheel would break on hosts missing these libs."
+            )
+
+    def _verify_macos_isolation(self, binary: Path, bin_dir: Path) -> None:
+        """Assert otool -L resolves every load command to @loader_path or system.
+
+        Apple frameworks ship in the dyld shared cache and must be loaded
+        via ``/usr/lib/...`` or ``/System/Library/...``.  Anything else
+        absolute (e.g. ``/opt/homebrew/Cellar/...``) means
+        ``install_name_tool`` did not rewrite the load command — i.e.
+        ``bundle_macos_dylibs`` skipped that dylib — and the wheel will
+        fail to load on machines without that exact path.
+        """
+        result = subprocess.run(
+            ["otool", "-L", str(binary)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"otool -L failed against bundled {binary.name}:\n{result.stderr}")
+
+        leaked: list[str] = []
+        # otool -L emits "<path>:" as the first line, then one tab-indented
+        # load command per line.
+        for line in result.stdout.splitlines()[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            load_path = line.split()[0]
+
+            if load_path.startswith("@"):
+                # @loader_path / @rpath / @executable_path — bundled-relative
+                continue
+            if load_path.startswith(("/usr/lib/", "/System/Library/")):
+                # Apple system frameworks — always present, must not bundle
+                continue
+
+            leaked.append(load_path)
+
+        if leaked:
+            raise RuntimeError(
+                f"Verification of bundled {binary.name} failed:\n"
+                "Load commands point outside the bundle / Apple system paths:\n  "
+                + "\n  ".join(leaked)
+                + "\nThese were not rewritten to @loader_path — the wheel will break\n"
+                "on machines without these absolute paths (e.g. without Homebrew)."
+            )
+
+    def _verify_windows_isolation(self, binary: Path, bin_dir: Path) -> None:
+        """Re-run --version with PATH=System32 only.
+
+        Windows DLL search order is: app dir → System32 → SysWOW64 →
+        Windows dir → cwd → PATH.  The binary lives in ``bin_dir``, and
+        we copy bundled DLLs alongside it, so app-dir resolution covers
+        everything we shipped.  Stripping PATH down to ``%SystemRoot%
+        \\System32`` lets the OS DLLs in the SYSTEM_LIBS blocklist
+        resolve while denying anything from MSYS2, the QEMU installer
+        directory, or other PATH entries on the build runner.  A missed
+        DLL therefore produces a non-zero exit.
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_LIBRARY"))}
+        system_root = env.get("SystemRoot", r"C:\Windows")
+        env["PATH"] = str(bin_dir) + os.pathsep + str(Path(system_root) / "System32")
+
+        try:
+            result = subprocess.run(
+                [str(binary), "--version"],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(
+                f"Isolation verification of {binary.name} timed out (PATH stripped)."
+            ) from e
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Isolation verification of bundled {binary.name} failed:\n"
+                f"  Exit code: {result.returncode}\n"
+                f"  Stderr: {result.stderr}\n"
+                "With PATH=bin_dir;System32 the loader could not find a DLL\n"
+                "the binary needs.  bundle_windows_dlls missed it; the wheel\n"
+                "would break on hosts without it on PATH."
             )
 
     def set_platform_wheel_tag(self, build_data: dict) -> None:
