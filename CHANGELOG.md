@@ -4,6 +4,16 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.9] - 2026-05-07
+
+### Fixed
+- **quicksand-core:** Drain only auth writes that actually queued. The post-auth drain loop in `VirtioSerialAgentClient.connect` counted every loop iteration as a stale auth write, including iterations that hit `FileNotFoundError` on `open_unix_connection` and never wrote anything — so on macOS, where the host typically beats QEMU to the chardev socket and gets 1–2 spurious failures, the drain loop sat 2.0 s waiting for phantom replies on every healthy boot. Alpine boot benchmark p50: 2.474 s → 0.523 s.
+- **quicksand-qemu:** Hard-fail Linux bundling when `patchelf` is missing or any NEEDED library is unresolved. quicksand-qemu 0.5.8 shipped on PyPI with no bundled shared libraries because `BinaryBundler.bundle_linux_libs` silently early-returned when `patchelf` was absent on the build runner; `verify` then passed because `LD_LIBRARY_PATH` fell through to `/etc/ld.so.cache`. Wheels broke on hosts (e.g. fresh WSL Ubuntu) without libnuma/liburing/libaio/libpixman/libslirp pre-installed.
+- **quicksand-qemu:** Extend the same isolation verification to macOS and Windows — `otool -L` now requires every load command to be `@loader_path/...` or a system path, and Windows DLL loads are re-verified under a stripped PATH. Catches the silent-bundling failure mode on all three platforms.
+
+### Released (no user-visible changes)
+- **quick-sandbox, quicksand-agent, quicksand-alpine, quicksand-alpine-desktop, quicksand-base-scaffold, quicksand-build-tools, quicksand-cua, quicksand-image-tools, quicksand-overlay-scaffold, quicksand-ubuntu, quicksand-ubuntu-desktop:** version bumps only — needed to pick up updated dep pins.
+
 ## [v0.11.8] - 2026-05-06
 
 ### Fixed
