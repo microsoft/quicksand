@@ -115,6 +115,22 @@ class BinaryBundler:
 
         Clears library path env vars to force using only bundled libs,
         then runs the binary with --version.
+
+        Additionally runs a platform-specific isolation check that
+        catches the failure mode where the bundler missed a lib but the
+        ``--version`` run still succeeds because the build machine has
+        the lib installed system-wide:
+
+        - **Linux**: re-runs ``ldd`` and asserts every NEEDED entry
+          resolves under ``bin_dir`` or matches the SYSTEM_LIBS
+          blocklist.
+        - **macOS**: parses ``otool -L`` and asserts every load command
+          is ``@loader_path/...``, ``/usr/lib/...``, or
+          ``/System/Library/...``.  Anything from ``/opt/homebrew/`` or
+          similar means the bundler missed a dylib.
+        - **Windows**: re-runs ``--version`` with PATH scrubbed to just
+          ``%SystemRoot%\\System32`` so the loader can only resolve DLLs
+          via the binary's app-dir (``bin_dir``) or System32.
         """
         env = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_LIBRARY"))}
 
@@ -146,7 +162,165 @@ class BinaryBundler:
                 f"  Stderr: {result.stderr}\n"
                 "A required library dependency was not bundled correctly."
             )
+
+        system = platform.system().lower()
+        if system == "linux":
+            self._verify_linux_isolation(binary, bin_dir)
+        elif system == "darwin":
+            self._verify_macos_isolation(binary, bin_dir)
+        elif system == "windows":
+            self._verify_windows_isolation(binary, bin_dir)
+
         self.app.display_info(f"Verified: {binary.name}")
+
+    def _verify_linux_isolation(self, binary: Path, bin_dir: Path) -> None:
+        """Assert ldd resolves every NEEDED lib to a bundled or blocklisted path.
+
+        Runs ``ldd`` against the bundled binary with ``LD_LIBRARY_PATH``
+        scrubbed (the binary's RPATH is what should be doing the work).
+        Any lib that resolves into a system path like ``/usr/lib/...`` —
+        and is not in the SYSTEM_LIBS blocklist — means the bundler
+        missed it and the wheel will break on hosts without that lib.
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_LIBRARY"))}
+        result = subprocess.run(
+            ["ldd", str(binary)],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ldd failed against bundled {binary.name}:\n{result.stderr}")
+
+        bin_dir_resolved = bin_dir.resolve()
+        blocklist = SYSTEM_LIBS["linux"]
+        leaked: list[str] = []
+        not_found: list[str] = []
+
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if "=>" not in line:
+                continue
+            if "not found" in line:
+                not_found.append(line)
+                continue
+            parts = line.split("=>")
+            if len(parts) != 2:
+                continue
+            lib_path = parts[1].strip().split()[0]
+            if not lib_path.startswith("/"):
+                continue
+
+            lib_name = Path(lib_path).name.lower()
+            if any(lib_name.startswith(prefix) for prefix in blocklist):
+                continue
+
+            try:
+                Path(lib_path).resolve().relative_to(bin_dir_resolved)
+            except ValueError:
+                leaked.append(f"{Path(lib_path).name} <- {lib_path}")
+
+        if not_found or leaked:
+            msgs: list[str] = []
+            if not_found:
+                msgs.append("Unresolved NEEDED libs:\n  " + "\n  ".join(not_found))
+            if leaked:
+                msgs.append(
+                    "Bundled binary resolved against system libs (not bundled):\n  "
+                    + "\n  ".join(leaked)
+                )
+            raise RuntimeError(
+                f"Verification of bundled {binary.name} failed:\n"
+                + "\n".join(msgs)
+                + "\nThe wheel would break on hosts missing these libs."
+            )
+
+    def _verify_macos_isolation(self, binary: Path, bin_dir: Path) -> None:
+        """Assert otool -L resolves every load command to @loader_path or system.
+
+        Apple frameworks ship in the dyld shared cache and must be loaded
+        via ``/usr/lib/...`` or ``/System/Library/...``.  Anything else
+        absolute (e.g. ``/opt/homebrew/Cellar/...``) means
+        ``install_name_tool`` did not rewrite the load command — i.e.
+        ``bundle_macos_dylibs`` skipped that dylib — and the wheel will
+        fail to load on machines without that exact path.
+        """
+        result = subprocess.run(
+            ["otool", "-L", str(binary)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"otool -L failed against bundled {binary.name}:\n{result.stderr}")
+
+        leaked: list[str] = []
+        # otool -L emits "<path>:" as the first line, then one tab-indented
+        # load command per line.
+        for line in result.stdout.splitlines()[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            load_path = line.split()[0]
+
+            if load_path.startswith("@"):
+                # @loader_path / @rpath / @executable_path — bundled-relative
+                continue
+            if load_path.startswith(("/usr/lib/", "/System/Library/")):
+                # Apple system frameworks — always present, must not bundle
+                continue
+
+            leaked.append(load_path)
+
+        if leaked:
+            raise RuntimeError(
+                f"Verification of bundled {binary.name} failed:\n"
+                "Load commands point outside the bundle / Apple system paths:\n  "
+                + "\n  ".join(leaked)
+                + "\nThese were not rewritten to @loader_path — the wheel will break\n"
+                "on machines without these absolute paths (e.g. without Homebrew)."
+            )
+
+    def _verify_windows_isolation(self, binary: Path, bin_dir: Path) -> None:
+        """Re-run --version with PATH=System32 only.
+
+        Windows DLL search order is: app dir → System32 → SysWOW64 →
+        Windows dir → cwd → PATH.  The binary lives in ``bin_dir``, and
+        we copy bundled DLLs alongside it, so app-dir resolution covers
+        everything we shipped.  Stripping PATH down to ``%SystemRoot%
+        \\System32`` lets the OS DLLs in the SYSTEM_LIBS blocklist
+        resolve while denying anything from MSYS2, the QEMU installer
+        directory, or other PATH entries on the build runner.  A missed
+        DLL therefore produces a non-zero exit.
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_LIBRARY"))}
+        system_root = env.get("SystemRoot", r"C:\Windows")
+        env["PATH"] = str(bin_dir) + os.pathsep + str(Path(system_root) / "System32")
+
+        try:
+            result = subprocess.run(
+                [str(binary), "--version"],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(
+                f"Isolation verification of {binary.name} timed out (PATH stripped)."
+            ) from e
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Isolation verification of bundled {binary.name} failed:\n"
+                f"  Exit code: {result.returncode}\n"
+                f"  Stderr: {result.stderr}\n"
+                "With PATH=bin_dir;System32 the loader could not find a DLL\n"
+                "the binary needs.  bundle_windows_dlls missed it; the wheel\n"
+                "would break on hosts without it on PATH."
+            )
 
     def set_platform_wheel_tag(self, build_data: dict) -> None:
         """Set build_data fields for a platform-specific py3-none wheel.
@@ -325,8 +499,13 @@ class BinaryBundler:
     def bundle_linux_libs(self, binary: Path, bin_dir: Path) -> None:
         """Copy shared library dependencies and set RPATH for Linux."""
         if not shutil.which("patchelf"):
-            self.app.display_warning("patchelf not found, skipping library bundling")
-            return
+            raise RuntimeError(
+                "patchelf is required to bundle Linux shared libraries.\n"
+                "Without it, the wheel ships QEMU with no bundled deps and no\n"
+                "RPATH, which only works on hosts that already have every\n"
+                "QEMU runtime dep installed system-wide.\n"
+                "Install with:  sudo apt-get install patchelf  (or dnf)."
+            )
 
         lib_dir = bin_dir / "lib"
         lib_dir.mkdir(exist_ok=True)
@@ -350,8 +529,13 @@ class BinaryBundler:
             text=True,
         )
 
+        not_found: list[str] = []
         for line in result.stdout.splitlines():
-            if "=>" not in line or "not found" in line:
+            if "=>" not in line:
+                continue
+
+            if "not found" in line:
+                not_found.append(line.strip())
                 continue
 
             parts = line.split("=>")
@@ -375,6 +559,17 @@ class BinaryBundler:
                     ["patchelf", "--set-rpath", "$ORIGIN", str(dest)],
                     capture_output=True,
                 )
+
+        if not_found:
+            joined = "\n  ".join(not_found)
+            raise RuntimeError(
+                f"ldd reported unresolved NEEDED libraries for {binary}:\n"
+                f"  {joined}\n"
+                "The build runner is missing these libs, so they cannot be\n"
+                "bundled.  Install the corresponding system packages on the\n"
+                "runner before building.  Shipping the wheel without them\n"
+                "would silently break on hosts that don't have them."
+            )
 
     # -----------------------------------------------------------------
     # Windows
