@@ -189,7 +189,7 @@ class Hooks(ReleaseHook):
                                 label="Remove non-native wheels from deps",
                                 check=False,
                                 args=[
-                                    "python3",
+                                    "python",
                                     "scripts/ci/filter_deps_platform.py",
                                     "deps",
                                 ],
