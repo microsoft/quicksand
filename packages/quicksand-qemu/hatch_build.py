@@ -864,11 +864,18 @@ class RuntimeBuildHook(BuildHookInterface):
         installer).  On Linux the build is expected to run as root (or
         with passwordless sudo) inside a CI runner container.
         """
+        system = platform.system().lower()
+
         if shutil.which(qemu_name):
             self.app.display_info(f"Found {qemu_name} on PATH")
+            # patchelf is required for Linux library bundling.  When QEMU is
+            # pre-installed on the runner image, the apt step in
+            # _install_qemu_linux is skipped, so patchelf may still be
+            # missing.  Ensure it here.
+            if system == "linux":
+                self._ensure_patchelf_installed()
             return
 
-        system = platform.system().lower()
         self.app.display_info(f"QEMU not found — installing for {system}...")
 
         if system == "darwin":
@@ -879,6 +886,35 @@ class RuntimeBuildHook(BuildHookInterface):
             self._install_qemu_windows()
         else:
             raise RuntimeError(f"Unsupported platform for automatic QEMU install: {system}")
+
+    def _ensure_patchelf_installed(self) -> None:
+        """Install patchelf on Linux if missing.
+
+        patchelf is required by ``BinaryBundler.bundle_linux_libs`` to set
+        RPATH on the bundled QEMU binary; without it, no shared libraries
+        are bundled and the resulting wheel only works on hosts that have
+        every QEMU runtime dep installed system-wide.
+        """
+        if shutil.which("patchelf"):
+            return
+
+        if shutil.which("apt-get"):
+            env = {**dict(os.environ), "DEBIAN_FRONTEND": "noninteractive"}
+            subprocess.run(
+                ["sudo", "apt-get", "install", "-y", "-qq", "patchelf"],
+                check=True,
+                env=env,
+            )
+            self.app.display_info("Installed patchelf via apt")
+        elif shutil.which("dnf"):
+            subprocess.run(["sudo", "dnf", "install", "-y", "patchelf"], check=True)
+            self.app.display_info("Installed patchelf via dnf")
+        else:
+            raise RuntimeError(
+                "patchelf is required for Linux QEMU bundling but is not installed,\n"
+                "and no supported package manager (apt-get, dnf) was found.\n"
+                "Install patchelf manually before building quicksand-qemu."
+            )
 
     def _install_qemu_macos(self) -> None:
         """Install QEMU via Homebrew."""
@@ -902,17 +938,17 @@ class RuntimeBuildHook(BuildHookInterface):
                 env=env,
             )
             subprocess.run(
-                ["sudo", "apt-get", "install", "-y", "-qq", pkg, "qemu-utils"],
+                ["sudo", "apt-get", "install", "-y", "-qq", pkg, "qemu-utils", "patchelf"],
                 check=True,
                 env=env,
             )
-            self.app.display_info(f"Installed {pkg} and qemu-utils via apt")
+            self.app.display_info(f"Installed {pkg}, qemu-utils, and patchelf via apt")
         elif shutil.which("dnf"):
             subprocess.run(
-                ["sudo", "dnf", "install", "-y", "qemu-system-x86-core", "qemu-img"],
+                ["sudo", "dnf", "install", "-y", "qemu-system-x86-core", "qemu-img", "patchelf"],
                 check=True,
             )
-            self.app.display_info("Installed QEMU via dnf")
+            self.app.display_info("Installed QEMU and patchelf via dnf")
         else:
             raise RuntimeError(
                 "No supported package manager found (apt-get or dnf).\n"

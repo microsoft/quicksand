@@ -115,6 +115,14 @@ class BinaryBundler:
 
         Clears library path env vars to force using only bundled libs,
         then runs the binary with --version.
+
+        On Linux, additionally re-runs ``ldd`` against the bundled binary
+        and asserts every NEEDED entry resolves to either a bundled lib
+        (under ``bin_dir``) or a SYSTEM_LIBS-blocklist lib.  Without this,
+        a ``--version`` run on the build machine succeeds even when libs
+        the bundler missed are silently picked up from ``/usr/lib`` via
+        ``/etc/ld.so.cache`` — producing wheels that break on hosts that
+        don't happen to have those libs installed.
         """
         env = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_LIBRARY"))}
 
@@ -146,7 +154,74 @@ class BinaryBundler:
                 f"  Stderr: {result.stderr}\n"
                 "A required library dependency was not bundled correctly."
             )
+
+        if platform.system().lower() == "linux":
+            self._verify_linux_isolation(binary, bin_dir)
+
         self.app.display_info(f"Verified: {binary.name}")
+
+    def _verify_linux_isolation(self, binary: Path, bin_dir: Path) -> None:
+        """Assert ldd resolves every NEEDED lib to a bundled or blocklisted path.
+
+        Runs ``ldd`` against the bundled binary with ``LD_LIBRARY_PATH``
+        scrubbed (the binary's RPATH is what should be doing the work).
+        Any lib that resolves into a system path like ``/usr/lib/...`` —
+        and is not in the SYSTEM_LIBS blocklist — means the bundler
+        missed it and the wheel will break on hosts without that lib.
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_LIBRARY"))}
+        result = subprocess.run(
+            ["ldd", str(binary)],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ldd failed against bundled {binary.name}:\n{result.stderr}")
+
+        bin_dir_resolved = bin_dir.resolve()
+        blocklist = SYSTEM_LIBS["linux"]
+        leaked: list[str] = []
+        not_found: list[str] = []
+
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if "=>" not in line:
+                continue
+            if "not found" in line:
+                not_found.append(line)
+                continue
+            parts = line.split("=>")
+            if len(parts) != 2:
+                continue
+            lib_path = parts[1].strip().split()[0]
+            if not lib_path.startswith("/"):
+                continue
+
+            lib_name = Path(lib_path).name.lower()
+            if any(lib_name.startswith(prefix) for prefix in blocklist):
+                continue
+
+            try:
+                Path(lib_path).resolve().relative_to(bin_dir_resolved)
+            except ValueError:
+                leaked.append(f"{Path(lib_path).name} <- {lib_path}")
+
+        if not_found or leaked:
+            msgs: list[str] = []
+            if not_found:
+                msgs.append("Unresolved NEEDED libs:\n  " + "\n  ".join(not_found))
+            if leaked:
+                msgs.append(
+                    "Bundled binary resolved against system libs (not bundled):\n  "
+                    + "\n  ".join(leaked)
+                )
+            raise RuntimeError(
+                f"Verification of bundled {binary.name} failed:\n"
+                + "\n".join(msgs)
+                + "\nThe wheel would break on hosts missing these libs."
+            )
 
     def set_platform_wheel_tag(self, build_data: dict) -> None:
         """Set build_data fields for a platform-specific py3-none wheel.
@@ -325,8 +400,13 @@ class BinaryBundler:
     def bundle_linux_libs(self, binary: Path, bin_dir: Path) -> None:
         """Copy shared library dependencies and set RPATH for Linux."""
         if not shutil.which("patchelf"):
-            self.app.display_warning("patchelf not found, skipping library bundling")
-            return
+            raise RuntimeError(
+                "patchelf is required to bundle Linux shared libraries.\n"
+                "Without it, the wheel ships QEMU with no bundled deps and no\n"
+                "RPATH, which only works on hosts that already have every\n"
+                "QEMU runtime dep installed system-wide.\n"
+                "Install with:  sudo apt-get install patchelf  (or dnf)."
+            )
 
         lib_dir = bin_dir / "lib"
         lib_dir.mkdir(exist_ok=True)
@@ -350,8 +430,13 @@ class BinaryBundler:
             text=True,
         )
 
+        not_found: list[str] = []
         for line in result.stdout.splitlines():
-            if "=>" not in line or "not found" in line:
+            if "=>" not in line:
+                continue
+
+            if "not found" in line:
+                not_found.append(line.strip())
                 continue
 
             parts = line.split("=>")
@@ -375,6 +460,17 @@ class BinaryBundler:
                     ["patchelf", "--set-rpath", "$ORIGIN", str(dest)],
                     capture_output=True,
                 )
+
+        if not_found:
+            joined = "\n  ".join(not_found)
+            raise RuntimeError(
+                f"ldd reported unresolved NEEDED libraries for {binary}:\n"
+                f"  {joined}\n"
+                "The build runner is missing these libs, so they cannot be\n"
+                "bundled.  Install the corresponding system packages on the\n"
+                "runner before building.  Shipping the wheel without them\n"
+                "would silently break on hosts that don't have them."
+            )
 
     # -----------------------------------------------------------------
     # Windows
