@@ -98,6 +98,12 @@ class VirtioSerialAgentClient:
         deadline = loop.time() + timeout
         last_error: Exception | None = None
         attempt = 0
+        # Auth frames written whose response we haven't consumed yet. Each
+        # auth-read TimeoutError leaves one such frame queued in the chardev
+        # buffer; when the agent eventually opens the device it will reply
+        # to every queued auth in order. We drain those stale replies after
+        # the successful one so the demux reader doesn't see them.
+        auth_writes_pending = 0
 
         logger.debug("Connecting to agent via virtio-serial: %s", self._socket_path)
 
@@ -133,19 +139,23 @@ class VirtioSerialAgentClient:
                 }
                 self._writer.write(_encode_frame(auth_msg))
                 await self._writer.drain()
+                auth_writes_pending += 1
 
                 remaining = max(deadline - loop.time(), 1.0)
                 read_timeout = min(Timeouts.GUEST_AGENT_HTTP, remaining)
                 response = await asyncio.wait_for(_read_frame(self._reader), timeout=read_timeout)
+                auth_writes_pending -= 1
                 result = response.get("result", {})
                 if result.get("authenticated"):
                     logger.debug("Virtio-serial agent authentication successful")
-                    # Drain stale auth responses from previous retries
+                    # Drain replies to any earlier auth writes that timed out.
+                    # By the time we got our successful reply, those replies
+                    # are already in the host-side buffer, so a short timeout
+                    # is sufficient.
                     drained = 0
-                    stale_expected = attempt - 1
-                    while drained < stale_expected:
+                    while drained < auth_writes_pending:
                         try:
-                            _ = await asyncio.wait_for(_read_frame(self._reader), timeout=2.0)
+                            _ = await asyncio.wait_for(_read_frame(self._reader), timeout=0.5)
                             drained += 1
                         except TimeoutError:
                             break
@@ -179,6 +189,9 @@ class VirtioSerialAgentClient:
                 logger.debug("Connection attempt %d failed: %s", attempt, e)
                 last_error = e
                 self._close_transport()
+                # QEMU drops any chardev-buffered frames when the client
+                # disconnects, so the next connection starts fresh.
+                auth_writes_pending = 0
                 await asyncio.sleep(0.1)
 
         raise TimeoutError(
