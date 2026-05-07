@@ -9,12 +9,16 @@ from __future__ import annotations
 import contextlib
 import logging
 import subprocess
+import sys
 from pathlib import Path
 from typing import IO
 
+from .. import _reaper
 from .._types import Timeouts
 
 logger = logging.getLogger("quicksand.process")
+
+_REAPER_SCRIPT = Path(_reaper.__file__)
 
 
 class VMProcessManager:
@@ -76,15 +80,21 @@ class VMProcessManager:
         self._console_log = console_log_path
         self._console_file = self._console_log.open("w")
 
+        # Spawn QEMU through the reaper so it dies when we die. The parent's
+        # write end of the stdin pipe is what keeps the reaper alive: when
+        # this process dies (Ctrl+C, crash, kill -9), the kernel closes that
+        # pipe and the reaper tears QEMU down. write_serial() still reaches
+        # QEMU because the reaper forwards stdin bytes to QEMU's stdin.
+        wrapped = [sys.executable, str(_REAPER_SCRIPT), "--", *command]
         self._process = subprocess.Popen(
-            command,
+            wrapped,
             stdout=self._console_file,
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE,
             env=env,
         )
 
-        logger.debug(f"Started QEMU process with PID {self._process.pid}")
+        logger.debug(f"Started QEMU via reaper, reaper PID {self._process.pid}")
 
     def write_serial(self, data: bytes) -> None:
         """Write raw bytes to the VM's serial port (stdin of QEMU process).
@@ -160,15 +170,25 @@ class VMProcessManager:
         if self._process:
             pid = self._process.pid
             try:
-                self._process.terminate()
+                # Close stdin first: this signals the reaper to tear QEMU
+                # down (its stdin watcher sees EOF and kills the child).
+                # Works the same on every platform, including Windows where
+                # Popen.terminate is a hard kill that wouldn't let the
+                # reaper run its cleanup.
+                if self._process.stdin is not None:
+                    with contextlib.suppress(Exception):
+                        self._process.stdin.close()
                 try:
                     self._process.wait(timeout=graceful_timeout)
                 except subprocess.TimeoutExpired:
-                    logger.warning(
-                        "QEMU process %d did not terminate gracefully, sending SIGKILL", pid
-                    )
-                    self._process.kill()
-                    self._process.wait(timeout=graceful_timeout)
+                    logger.warning("Reaper %d did not exit gracefully, sending terminate", pid)
+                    self._process.terminate()
+                    try:
+                        self._process.wait(timeout=graceful_timeout)
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Reaper %d did not terminate, sending SIGKILL", pid)
+                        self._process.kill()
+                        self._process.wait(timeout=graceful_timeout)
             except Exception as e:
                 errors.append(("QEMU process", e))
                 logger.error("Failed to terminate QEMU process (pid=%d): %s", pid, e)
