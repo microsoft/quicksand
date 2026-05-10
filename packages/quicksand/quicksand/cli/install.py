@@ -9,7 +9,6 @@ Programmatic API::
     from quicksand import install
 
     install("qemu", "ubuntu")          # install specific extras
-    install("all")                     # install all main packages
     install("ubuntu", version="0.4.0") # pin a version
 """
 
@@ -38,15 +37,6 @@ ALIASES: dict[str, list[str]] = {
     "agent": ["quicksand-agent"],
     "cua": ["quicksand-cua"],
     "dev": ["quicksand-image-tools", "quicksand-overlay-scaffold", "quicksand-base-scaffold"],
-    "all": [
-        "quicksand-qemu",
-        "quicksand-ubuntu",
-        "quicksand-alpine",
-        "quicksand-alpine-desktop",
-        "quicksand-ubuntu-desktop",
-        "quicksand-agent",
-        "quicksand-cua",
-    ],
 }
 
 
