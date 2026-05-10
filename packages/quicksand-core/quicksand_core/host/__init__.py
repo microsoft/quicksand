@@ -9,6 +9,7 @@ This package provides host-specific configuration including:
 from . import arch
 from . import os_ as os
 from .arch import Architecture
+from .host_memory import get_host_memory_bytes
 from .os_ import (
     OS,
     Accelerator,
@@ -31,5 +32,6 @@ __all__ = [
     "OSConfig",
     "WindowsConfig",
     "arch",
+    "get_host_memory_bytes",
     "os",
 ]

@@ -128,6 +128,8 @@ class _LifecycleMixin(_SandboxProtocol):
         """Generate agent credentials, build the VM command, and start QEMU."""
         from ..utils import find_free_port, find_free_vnc_port
 
+        self._check_memory_budget()
+
         self._agent_token = secrets.token_hex(16)
         self._agent_port = find_free_port()
         self._qmp_port = find_free_port()
@@ -206,6 +208,38 @@ class _LifecycleMixin(_SandboxProtocol):
     # ------------------------------------------------------------------
     # start() helpers
     # ------------------------------------------------------------------
+
+    def _check_memory_budget(self) -> None:
+        """Warn if the configured guest RAM is large relative to host RAM.
+
+        Best-effort: silent on platforms where host RAM can't be detected.
+        """
+        from ..host import get_host_memory_bytes
+        from ..utils.memory import format_bytes
+
+        host_total = get_host_memory_bytes()
+        if host_total is None:
+            return
+
+        configured = self.config.memory_bytes
+        ratio = configured / host_total
+
+        if ratio > 1.0:
+            logger.warning(
+                "Sandbox memory %s exceeds host RAM %s (%.0f%%) — guest will "
+                "likely be killed by the host OOM killer once it touches enough pages.",
+                format_bytes(configured),
+                format_bytes(host_total),
+                ratio * 100,
+            )
+        elif ratio > 0.8:
+            logger.warning(
+                "Sandbox memory %s is %.0f%% of host RAM (%s) — concurrent "
+                "sandboxes or other workloads may push the host into swap.",
+                format_bytes(configured),
+                ratio * 100,
+                format_bytes(host_total),
+            )
 
     def _create_overlay(self) -> None:
         assert self._overlay_manager is not None

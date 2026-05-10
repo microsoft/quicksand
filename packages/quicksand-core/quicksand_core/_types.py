@@ -17,7 +17,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Protocol, TypedDict, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from .host import Accelerator
 
@@ -587,6 +587,21 @@ class SandboxConfig(BaseModel):
     accel: Accelerator | Literal["auto"] | None = "auto"
     disk_size: str | None = None
     enable_display: bool = False
+
+    @field_validator("memory")
+    @classmethod
+    def _validate_memory(cls, v: str) -> str:
+        from .utils.memory import parse_memory_size
+
+        parse_memory_size(v)
+        return v
+
+    @property
+    def memory_bytes(self) -> int:
+        """Configured guest RAM in bytes."""
+        from .utils.memory import parse_memory_size
+
+        return parse_memory_size(self.memory)
 
 
 class SandboxConfigParams(TypedDict, total=False):
