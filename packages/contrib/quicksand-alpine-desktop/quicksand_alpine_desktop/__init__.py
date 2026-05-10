@@ -29,7 +29,12 @@ from typing import Unpack
 from quicksand_core import Sandbox
 from quicksand_core._types import SandboxConfigParams
 
-__version__ = "0.2.3"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("quicksand-alpine-desktop")
+except Exception:
+    __version__ = "0.0.0"
 
 DISTRO_VERSION = "3.21"
 

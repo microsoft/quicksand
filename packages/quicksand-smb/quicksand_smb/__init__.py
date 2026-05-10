@@ -43,7 +43,12 @@ from ._query import handle_query_directory, handle_query_info, handle_set_info
 from ._status import STATUS_NOT_IMPLEMENTED, STATUS_SUCCESS
 from ._tree import handle_tree_connect, handle_tree_disconnect
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("quicksand-smb")
+except Exception:
+    __version__ = "0.0.0"
 
 logger = logging.getLogger("quicksand.smb")
 

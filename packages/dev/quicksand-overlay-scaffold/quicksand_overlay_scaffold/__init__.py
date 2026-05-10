@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("quicksand-overlay-scaffold")
+except Exception:
+    __version__ = "0.0.0"
 
 PACKAGE_DIR = Path(__file__).parent
 IMAGES_DIR = PACKAGE_DIR / "images"

@@ -7,7 +7,12 @@ Install with: pip install quick-sandbox[qemu]
 
 from pathlib import Path
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("quicksand-qemu")
+except Exception:
+    __version__ = "0.0.0"
 
 _PACKAGE_DIR = Path(__file__).parent
 _BIN_DIR = _PACKAGE_DIR / "bin"

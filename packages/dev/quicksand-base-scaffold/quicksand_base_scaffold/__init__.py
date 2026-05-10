@@ -11,7 +11,12 @@ from quicksand_core._types import SandboxConfigParams
 from quicksand_core.host import Architecture
 from quicksand_core.qemu.platform import get_platform_config
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("quicksand-base-scaffold")
+except Exception:
+    __version__ = "0.0.0"
 
 DISTRO_VERSION = "VERSION"
 

@@ -17,4 +17,9 @@ from .build import build_image, get_agent_source_dir
 
 __all__ = ["build_image", "get_agent_source_dir"]
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("quicksand-image-tools")
+except Exception:
+    __version__ = "0.0.0"
