@@ -66,10 +66,6 @@ Alpine is smaller and boots faster. Ubuntu has a larger package ecosystem. Deskt
 
 ## Verify the installation
 
-```bash
-quicksand images list    # Shows installed images
-```
-
 ```python
 import asyncio
 from quicksand import Sandbox

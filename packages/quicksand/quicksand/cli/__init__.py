@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import clean, dev, install, qemu, release_save, run, uninstall
+from . import clean, dev, install, list_extras, qemu, run, uninstall
 
 
 def main() -> int:
@@ -20,8 +20,8 @@ def main() -> int:
     run.register(subparsers)
     install.register(subparsers)
     uninstall.register(subparsers)
+    list_extras.register(subparsers)
     clean.register(subparsers)
-    release_save.register(subparsers)
     qemu.register(subparsers)
     dev.register(subparsers)
 
@@ -37,8 +37,8 @@ def main() -> int:
         return install.cmd(args)
     elif args.command == "uninstall":
         return uninstall.cmd(args)
-    elif args.command == "release":
-        return release_save.cmd(args)
+    elif args.command == "list":
+        return list_extras.cmd(args)
     elif args.command == "qemu":
         return qemu.cmd(args)
     elif args.command == "clean":

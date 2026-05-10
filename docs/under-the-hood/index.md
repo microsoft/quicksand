@@ -506,7 +506,7 @@ Image packages register via `quicksand.images` entry points:
 ubuntu = "quicksand_ubuntu:ImageProvider"
 ```
 
-The `quicksand images list` CLI and image resolution logic use these entry points to discover available images dynamically. `ImageProvider` is a `typing.Protocol` that returns a `ResolvedImage` (with fields: `name`, `chain`, `kernel`, `initrd`, `guest_arch`). The `chain` is the full disk chain from base image to topmost overlay, where `chain[0]` is the root base qcow2 and `chain[1:]` are overlay layers in bottom-to-top order.
+Image resolution uses these entry points to discover available images dynamically. `ImageProvider` is a `typing.Protocol` that returns a `ResolvedImage` (with fields: `name`, `chain`, `kernel`, `initrd`, `guest_arch`). The `chain` is the full disk chain from base image to topmost overlay, where `chain[0]` is the root base qcow2 and `chain[1:]` are overlay layers in bottom-to-top order.
 
 ### Image Bundle Format (.quicksand)
 
