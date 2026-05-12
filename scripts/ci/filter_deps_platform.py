@@ -24,8 +24,8 @@ _WHEEL_RE = re.compile(r"^.+?-.+?-\w+-\w+-(?P<platform>.+)\.whl$")
 _PLATFORM_TAGS: dict[tuple[str, str], list[str]] = {
     ("Darwin", "arm64"): ["macosx_11_0_arm64", "any"],
     ("Darwin", "x86_64"): ["macosx_10_13_x86_64", "any"],
-    ("Linux", "x86_64"): ["linux_x86_64", "any"],
-    ("Linux", "aarch64"): ["linux_aarch64", "any"],
+    ("Linux", "x86_64"): ["linux_x86_64", "manylinux_2_17_x86_64", "any"],
+    ("Linux", "aarch64"): ["linux_aarch64", "manylinux_2_17_aarch64", "any"],
     ("Windows", "AMD64"): ["win_amd64", "any"],
     ("Windows", "ARM64"): ["win_arm64", "any"],
 }
