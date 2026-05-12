@@ -33,7 +33,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff" },
     { name = "ty" },
-    { name = "uv-release", specifier = "==0.35.0" },
+    { name = "uv-release", specifier = ">=0.35.2" },
 ]
 
 [[package]]
@@ -1319,7 +1319,7 @@ wheels = [
 
 [[package]]
 name = "uv-release"
-version = "0.35.0"
+version = "0.35.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "diny" },
@@ -1331,7 +1331,7 @@ dependencies = [
     { name = "tomlkit" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/24/070f7d5b76f0310e8e831a8a5ad09cbc778a1c8399a4664458c337b140d3/uv_release-0.35.0-py3-none-any.whl", hash = "sha256:30c090e6bf558ce8a42e28fda0ec2147ca469f9dcabb6d7621556098a91070e3", size = 134557, upload-time = "2026-05-09T23:29:29.348Z" },
+    { url = "https://files.pythonhosted.org/packages/96/d6/5994ad088c2edddffb79344c36f02de7e1c772b731f3b319a913ef423f43/uv_release-0.35.2-py3-none-any.whl", hash = "sha256:d348180613aca18bdf6adb8937bee88836073ee8f2edab8806755cd2abca375b", size = 138531, upload-time = "2026-05-12T17:04:55.716Z" },
 ]
 
 [[package]]
