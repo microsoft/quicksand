@@ -1087,7 +1087,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-cua"
-version = "0.3.6"
+version = "0.3.7.dev0"
 source = { editable = "packages/contrib/quicksand-cua" }
 dependencies = [
     { name = "quicksand-agent" },
