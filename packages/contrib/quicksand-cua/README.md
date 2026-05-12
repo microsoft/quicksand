@@ -44,6 +44,8 @@ Everything from [quicksand-agent](../quicksand-agent) (Python 3.12, uv, requests
 - **Chromium** browser (installed via Playwright)
 - **noVNC** web client on port 6080
 - **Fonts** (Liberation, Noto Color Emoji)
+- **flake8** Python linter (`7.1.1`)
+- **findutils** (`find`, `xargs`, `locate`)
 
 All services (Xvfb, x11vnc, Chromium, noVNC) are enabled as systemd units and start automatically on boot.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.3.6] - 2026-05-12
+
+### Added
+- `flake8` (7.1.1) bundled in the overlay image
+- `findutils` (`find`, `xargs`, `locate`) bundled in the overlay image
+
 ## [v0.1.7] - 2026-03-31
 
 ### Fixed
