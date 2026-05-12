@@ -85,6 +85,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
         UVR_RUNNER: ${{ toJSON(matrix.runner) }}
+        QUICKSAND_AUTO_INSTALL: "1"
       run: uv run uvr jobs build
     - id: upload
       uses: actions/upload-artifact@v4
