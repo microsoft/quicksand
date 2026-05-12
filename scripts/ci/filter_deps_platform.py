@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-_WHEEL_RE = re.compile(r"^.+?-.+?-\w+-\w+-(?P<platform>.+)\.whl$")
+_WHEEL_RE = re.compile(r"^(?P<name>.+?)-.+?-\w+-\w+-(?P<platform>.+)\.whl$")
 
 # Map (system, machine) to platform tag prefixes that are compatible.
 # Use exact platform tags (not just prefix) to avoid e.g. uv selecting
@@ -48,15 +48,30 @@ def main() -> int:
         return 0
 
     removed = 0
+    # First pass: drop wheels whose platform tag is incompatible with the
+    # current platform.
+    parsed: dict[Path, tuple[str, str]] = {}
     for whl in sorted(deps_dir.glob("*.whl")):
         m = _WHEEL_RE.match(whl.name)
         if not m:
             continue
+        name = m.group("name")
         plat = m.group("platform")
-        if plat == "any":
-            continue
-        if plat not in tags:
+        if plat != "any" and plat not in tags:
             print(f"  Removing incompatible wheel: {whl.name}")
+            whl.unlink()
+            removed += 1
+            continue
+        parsed[whl] = (name, plat)
+
+    # Second pass: for each distribution where a platform-specific wheel
+    # exists for the current platform, drop the pure ``any`` wheel. Pure
+    # wheels for these packages are stubs without bundled image data and
+    # would shadow the platform wheel during install.
+    has_platform: set[str] = {name for (name, plat) in parsed.values() if plat != "any"}
+    for whl, (name, plat) in parsed.items():
+        if plat == "any" and name in has_platform:
+            print(f"  Removing pure wheel shadowed by platform wheel: {whl.name}")
             whl.unlink()
             removed += 1
 
