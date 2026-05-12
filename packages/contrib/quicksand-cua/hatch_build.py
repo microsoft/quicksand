@@ -44,12 +44,12 @@ async def _setup(shell: Shell) -> None:
         timeout=300,
     )
     await shell(
-        "apt-get install -y novnc websockify socat rsync",
+        "apt-get install -y novnc websockify socat rsync findutils",
         timeout=300,
     )
 
     # ── Install Playwright and Chromium via Playwright ───────────
-    await shell("/opt/python/bin/pip install playwright", timeout=300)
+    await shell('/opt/python/bin/pip install playwright "flake8==7.1.1"', timeout=300)
     await shell(
         "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright"
         " /opt/python/bin/python3 -m playwright install --with-deps chromium",
