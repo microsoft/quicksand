@@ -14,7 +14,7 @@ quicksand-base-scaffold = "quicksand_base_scaffold:image"
 
 
 [build-system]
-requires = ["hatchling", "quicksand-image-tools>=0.5.1,<0.6.0", "quicksand-core>=0.11.1,<0.12.0", "quicksand-qemu>=0.5.1,<0.6.0", "quicksand-smb>=0.4.1,<0.5.0"]
+requires = ["hatchling", "quicksand-image-tools>=0.6.0a1,<0.7.0", "quicksand-core>=0.12.0a1,<0.13.0", "quicksand-qemu>=0.6.0a1,<0.7.0", "quicksand-smb>=0.5.0a1,<0.6.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
