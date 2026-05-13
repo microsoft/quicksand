@@ -39,6 +39,7 @@ quicksand install ubuntu-desktop
 | `accelerator_config.py` | Hardware acceleration options | ubuntu |
 | `mounts.py` | Boot-time and hot mounts | ubuntu |
 | `checkpoint_revert.py` | In-session snapshots with revert | ubuntu |
+| `fork.py` | Branch a running sandbox into a sibling | ubuntu |
 | `save.py` | Save and reload sandbox state | ubuntu |
 | `save_load_large.py` | Save/load stress test with large packages | ubuntu or alpine |
 | `error_handling.py` | Exit codes, stderr, timeouts | ubuntu |

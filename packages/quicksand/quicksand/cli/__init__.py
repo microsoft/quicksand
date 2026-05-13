@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import clean, dev, install, list_extras, qemu, run, uninstall
+from . import clean, dev, install, list_extras, qemu, run, save, uninstall
 
 
 def main() -> int:
@@ -21,6 +21,7 @@ def main() -> int:
     install.register(subparsers)
     uninstall.register(subparsers)
     list_extras.register(subparsers)
+    save.register(subparsers)
     clean.register(subparsers)
     qemu.register(subparsers)
     dev.register(subparsers)
@@ -41,6 +42,8 @@ def main() -> int:
         return list_extras.cmd(args)
     elif args.command == "qemu":
         return qemu.cmd(args)
+    elif args.command == "save":
+        return save.cmd(args)
     elif args.command == "clean":
         return clean.cmd(args)
     elif args.command == "dev":

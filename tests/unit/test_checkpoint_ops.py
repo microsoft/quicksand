@@ -28,12 +28,12 @@ class TestCreateSave:
         overlay.write_bytes(b"overlay-data")
 
         manifest = SaveManifest(
-            version=5,
             config=SandboxConfig(image="test"),
+            chain=[],
         )
 
         writer = SaveWriter("my-save", workspace=tmp_dir)
-        writer.write(overlay_chain=[overlay], manifest=manifest)
+        writer.write(overlay_chain=[overlay], manifest=manifest, bundle=True)
 
         save_path = tmp_dir / "my-save"
         assert save_path.is_dir()
@@ -55,12 +55,12 @@ class TestCreateSave:
         overlay.write_bytes(b"data")
 
         manifest = SaveManifest(
-            version=5,
             config=SandboxConfig(image="test"),
+            chain=[],
         )
 
         writer = SaveWriter("my-save", workspace=tmp_dir)
-        writer.write(overlay_chain=[overlay], manifest=manifest)
+        writer.write(overlay_chain=[overlay], manifest=manifest, bundle=True)
 
         save_path = tmp_dir / "my-save"
         assert save_path == tmp_dir / "my-save"
@@ -76,12 +76,12 @@ class TestCreateSave:
         (existing / "old-file.txt").write_text("should be replaced")
 
         manifest = SaveManifest(
-            version=5,
             config=SandboxConfig(image="test"),
+            chain=[],
         )
 
         writer = SaveWriter("my-save", workspace=tmp_dir)
-        writer.write(overlay_chain=[overlay], manifest=manifest)
+        writer.write(overlay_chain=[overlay], manifest=manifest, bundle=True)
 
         assert existing.is_dir()
         assert not (existing / "old-file.txt").exists()
@@ -92,13 +92,13 @@ class TestCreateSave:
         overlay.write_bytes(b"data")
 
         manifest = SaveManifest(
-            version=5,
             config=SandboxConfig(image="test"),
+            chain=[],
         )
 
         # Should succeed without any shutdown machinery
         writer = SaveWriter("cp", workspace=tmp_dir)
-        writer.write(overlay_chain=[overlay], manifest=manifest)
+        writer.write(overlay_chain=[overlay], manifest=manifest, bundle=True)
         save_path = tmp_dir / "cp"
         assert save_path.exists()
 
@@ -170,6 +170,8 @@ class TestHotSave:
                 )
                 self._overlay_path = overlay
                 self._temp_dir = tmp_dir
+                self._session_overlays: list = [overlay]
+                self._sandbox_id = "test-sandbox-id"
                 self._agent_client = None
                 self._agent_port = None
                 self._agent_token = None
@@ -336,6 +338,8 @@ class TestCheckpointRevert:
                 )
                 self._overlay_path = overlay
                 self._temp_dir = tmp_dir
+                self._session_overlays: list = [overlay]
+                self._sandbox_id = "test-sandbox-id"
                 self._agent_client = None
                 self._agent_port = None
                 self._agent_token = None

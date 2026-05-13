@@ -20,8 +20,10 @@ from ..host.arch import Architecture, _detect_architecture
 
 logger = logging.getLogger("quicksand.image")
 
-# Current save file format version
-SAVE_VERSION = 6
+# Retained for any external code still importing it; the loader no longer
+# branches on a numeric version. Save dispatch lives in the writer + the
+# basename resolution in _resolve_chain_entry.
+SAVE_VERSION = 7
 
 
 class ImageResolver:
@@ -80,7 +82,7 @@ class ImageResolver:
     # =================================================================
 
     def validate_save(self, path: Path) -> SaveManifest:
-        """Validate save structure: manifest version and overlays directory.
+        """Validate save structure: every chain entry resolves to a file.
 
         Args:
             path: Path to the save directory.
@@ -96,18 +98,19 @@ class ImageResolver:
 
         manifest = _load_manifest(path)
 
-        if manifest.version > SAVE_VERSION:
+        if not manifest.chain:
+            raise ValueError(f"Save manifest has empty chain: {path}")
+
+        missing: list[str] = []
+        for entry in manifest.chain:
+            if _resolve_chain_entry(entry, path) is None:
+                missing.append(entry)
+        if missing:
             raise ValueError(
-                f"Save version {manifest.version} is newer than supported version {SAVE_VERSION}"
+                f"Save at {path} references missing overlays: "
+                + ", ".join(missing)
+                + "\nThe overlay cache may have been GC'd, or the save dir is incomplete."
             )
-
-        overlays_dir = path / FilePatterns.OVERLAYS_DIR
-        if not overlays_dir.is_dir():
-            raise ValueError(f"Missing {FilePatterns.OVERLAYS_DIR}/ directory in save: {path}")
-
-        overlays = sorted(overlays_dir.glob("*.qcow2"))
-        if not overlays:
-            raise ValueError(f"No overlay files found in {overlays_dir}")
 
         return manifest
 
@@ -116,27 +119,18 @@ class ImageResolver:
     # =================================================================
 
     def _resolve_save(self, save_dir: Path) -> ResolvedImage:
-        """Load a save directory and resolve its base image."""
+        """Load a save directory and resolve its base image.
+
+        Each chain entry is resolved by searching, in order, the save
+        dir's own ``overlays/`` subdir then the per-user overlay cache.
+        The first hit wins, so a bundled save stays self-contained even
+        if the overlay cache happens to hold a same-named file.
+        """
         manifest = _load_manifest(save_dir)
 
-        if manifest.version > SAVE_VERSION:
-            raise ValueError(
-                f"Save version {manifest.version} is newer than supported version {SAVE_VERSION}"
-            )
-
-        # Read overlays from the directory (canonical source)
-        overlays_dir = save_dir / FilePatterns.OVERLAYS_DIR
-        if not overlays_dir.is_dir():
-            raise ValueError(f"Missing {FilePatterns.OVERLAYS_DIR}/ directory in save: {save_dir}")
-        overlays = sorted(overlays_dir.glob("*.qcow2"))
-        if not overlays:
-            raise ValueError(f"No overlay files found in {overlays_dir}")
-
-        # Cross-arch detection
         host_arch = _detect_architecture()
         save_arch = manifest.arch
         image_arch: str | None = None
-
         if save_arch is not None and save_arch != str(host_arch):
             image_arch = Architecture.from_str(save_arch).image_arch
             logger.warning(
@@ -146,10 +140,8 @@ class ImageResolver:
                 host_arch,
             )
 
-        # Recursively resolve the parent image to get its full chain
         parent_name = manifest.config.image
         parent_resolved = self._resolve_base_by_name(parent_name, arch=image_arch)
-
         if parent_resolved is None:
             arch_msg = f" for {image_arch}" if image_arch else ""
             raise RuntimeError(
@@ -158,15 +150,25 @@ class ImageResolver:
                 + (f" --arch {image_arch}" if image_arch else "")
             )
 
-        # Merge: parent's full chain + this save's overlays
-        full_chain = list(parent_resolved.chain) + overlays
+        overlays: list[Path] = []
+        missing: list[str] = []
+        for entry in manifest.chain:
+            resolved = _resolve_chain_entry(entry, save_dir)
+            if resolved is None:
+                missing.append(entry)
+            else:
+                overlays.append(resolved)
+        if missing:
+            raise RuntimeError(
+                f"Save at {save_dir} references missing overlays:\n  "
+                + "\n  ".join(missing)
+                + "\nLook in <save>/overlays/ or the per-user overlay cache. "
+                "The overlay cache may have been GC'd, or the save dir is incomplete."
+            )
 
-        logger.info(
-            "Loaded save: parent=%s, own_overlays=%d, total_chain=%d",
-            parent_name,
-            len(overlays),
-            len(full_chain),
-        )
+        logger.info("Loaded save: parent=%s, chain_len=%d", parent_name, len(overlays))
+
+        full_chain = list(parent_resolved.chain) + overlays
 
         return ResolvedImage(
             name=parent_name,
@@ -236,9 +238,60 @@ class ImageResolver:
         return None
 
 
+def _resolve_chain_entry(entry: str, save_dir: Path) -> Path | None:
+    """Locate an overlay file by basename: save dir's overlays/ then the cache.
+
+    Returns the resolved path or ``None`` if neither location holds it.
+    Search order is "local first" so a bundled save stays self-contained
+    even when the overlay cache happens to hold a file with the same basename.
+    """
+    local = save_dir / FilePatterns.OVERLAYS_DIR / entry
+    if local.exists():
+        return local
+    try:
+        from .._overlay_cache import get_overlays_dir
+
+        pool_path = get_overlays_dir() / entry
+        if pool_path.exists():
+            return pool_path
+    except Exception:
+        pass
+    return None
+
+
 def _load_manifest(save_dir: Path) -> SaveManifest:
-    """Load and parse manifest.json from a save directory."""
+    """Load and parse manifest.json from a save directory.
+
+    Handles in-place migration of legacy manifest shapes so the rest of
+    the code only deals with the current schema:
+
+    * Pre-Phase-6 ("v6") manifests have no ``chain`` field; we synthesize
+      it from ``<save>/overlays/*.qcow2``.
+    * Early Phase-6 ("v7") manifests have absolute cache paths in
+      ``chain``; we reduce each to its basename.
+    * Old ``version`` / ``format`` discriminator fields are dropped — the
+      new resolver doesn't need them.
+    """
+    import json
+
     manifest_path = save_dir / FilePatterns.MANIFEST
     if not manifest_path.exists():
         raise ValueError(f"Missing {FilePatterns.MANIFEST} in save: {save_dir}")
-    return SaveManifest.model_validate_json(manifest_path.read_text())
+    data = json.loads(manifest_path.read_text())
+
+    chain = data.get("chain")
+    if not chain:
+        overlays_dir = save_dir / FilePatterns.OVERLAYS_DIR
+        if overlays_dir.is_dir():
+            chain = sorted(p.name for p in overlays_dir.glob("*.qcow2"))
+        else:
+            chain = []
+    else:
+        chain = [Path(entry).name for entry in chain]
+    data["chain"] = chain
+
+    # Drop legacy discriminator fields — no longer load-bearing.
+    data.pop("version", None)
+    data.pop("format", None)
+
+    return SaveManifest.model_validate(data)

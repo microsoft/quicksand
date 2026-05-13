@@ -15,6 +15,7 @@ Programmatic API::
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import platform
 import subprocess
@@ -252,7 +253,46 @@ def _install_packages(
             return 1
 
     print(f"\nInstalled {len(packages)} package(s)")
+    _mirror_installed_images(packages)
     return 0
+
+
+def _mirror_installed_images(packages: list[str]) -> None:
+    """Mirror image artifacts from each freshly-installed package into the cache.
+
+    Runs in a subprocess so importlib.metadata sees the just-installed packages
+    (the current process may have cached pre-install entry points). Best effort
+    — failure is non-fatal; lookups fall back to the venv images/ dir.
+    """
+    script = """
+import sys
+try:
+    from importlib.metadata import entry_points
+    from quicksand_core._image_cache import mirror_to_cache
+except ImportError:
+    sys.exit(0)
+
+targets = set(sys.argv[1:])
+for ep in entry_points(group="quicksand.images"):
+    try:
+        pkg = ep.dist.name if getattr(ep, "dist", None) else None
+    except Exception:
+        pkg = None
+    if pkg is None or pkg not in targets:
+        continue
+    try:
+        provider = ep.load()
+        n = mirror_to_cache(pkg, provider.images_dir)
+        if n:
+            print(f"  Cached {n} image file(s) for {pkg}")
+    except Exception as e:
+        print(f"  Warning: failed to cache {pkg} images: {e}", file=sys.stderr)
+"""
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            [sys.executable, "-c", script, *packages],
+            check=False,
+        )
 
 
 def _get_latest_release_tag(pkg_name: str) -> str | None:

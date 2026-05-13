@@ -65,6 +65,7 @@ class VMProcessManager:
         command: list[str],
         env: dict[str, str],
         console_log_path: Path,
+        cleanup_state_file: Path | None = None,
     ) -> None:
         """Start the QEMU process.
 
@@ -72,6 +73,10 @@ class VMProcessManager:
             command: The QEMU command line arguments.
             env: Environment variables for the process.
             console_log_path: Path to write console output.
+            cleanup_state_file: Optional path to a Sandbox state JSON file.
+                When set, the reaper will delete the file plus the overlay
+                paths it lists after QEMU exits — providing eager cleanup
+                of cached overlays if this Python parent dies unexpectedly.
         """
         if self._process is not None:
             raise RuntimeError("Process already started")
@@ -85,7 +90,10 @@ class VMProcessManager:
         # this process dies (Ctrl+C, crash, kill -9), the kernel closes that
         # pipe and the reaper tears QEMU down. write_serial() still reaches
         # QEMU because the reaper forwards stdin bytes to QEMU's stdin.
-        wrapped = [sys.executable, str(_REAPER_SCRIPT), "--", *command]
+        reaper_args: list[str] = [sys.executable, str(_REAPER_SCRIPT)]
+        if cleanup_state_file is not None:
+            reaper_args += ["--cleanup-state", str(cleanup_state_file)]
+        wrapped = [*reaper_args, "--", *command]
         self._process = subprocess.Popen(
             wrapped,
             stdout=self._console_file,

@@ -25,9 +25,11 @@ class _AgentSandboxImageProvider:
     images_dir = IMAGES_DIR
 
     def resolve(self, arch: str | None = None):
+        from quicksand_core._image_cache import resolve_dir
         from quicksand_core.qemu.image_resolver import ImageResolver
 
-        if not (IMAGES_DIR / "manifest.json").exists():
+        save_dir = resolve_dir("quicksand-agent", IMAGES_DIR)
+        if save_dir is None:
             from quicksand_core._auto_install import auto_install_images
 
             if not auto_install_images("quicksand-agent", IMAGES_DIR):
@@ -35,7 +37,11 @@ class _AgentSandboxImageProvider:
                     "No bundled save found. If you installed from PyPI, download images with:\n"
                     "  quicksand install quicksand-agent"
                 )
-        return ImageResolver()._resolve_save(IMAGES_DIR)
+            save_dir = resolve_dir("quicksand-agent", IMAGES_DIR)
+            if save_dir is None:
+                raise FileNotFoundError("Auto-install did not produce a usable save")
+
+        return ImageResolver()._resolve_save(save_dir)
 
 
 # Module-level instance — registered as quicksand.images entry point

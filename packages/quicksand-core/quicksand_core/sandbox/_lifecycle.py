@@ -45,7 +45,13 @@ class _LifecycleMixin(_SandboxProtocol):
         return get_platform_config()
 
     def _resolve_image(self) -> None:
-        """Resolve config.image to concrete paths using ImageResolver."""
+        """Resolve config.image to concrete paths using ImageResolver.
+
+        No-op when ``self._image`` was already populated (e.g., by
+        ``Sandbox._from_resolved`` during a ``fork()``).
+        """
+        if self._image is not None:
+            return
         from ..qemu.image_resolver import ImageResolver
 
         self._image = ImageResolver().resolve(self.config.image, arch=self.config.arch)
@@ -117,12 +123,32 @@ class _LifecycleMixin(_SandboxProtocol):
     def _setup_disk(self) -> None:
         """Create the working directory and qcow2 overlay (fresh or restored from save).
 
-        If ``_image.overlays`` is set (save or overlay package), the
-        overlay chain is restored. Otherwise a fresh overlay is created.
+        The Sandbox's ``_temp_dir`` still holds ephemeral runtime state
+        (sockets, console log). The overlay qcow2 itself lives in the
+        per-user overlay cache at ``<cache_dir>/overlays/`` so its absolute path is
+        stable across venv rebuilds and survives the Sandbox lifecycle
+        cleanly. The file is tracked in ``_session_overlays`` and removed
+        in ``_cleanup``.
         """
+        from .._overlay_cache import allocate_overlay_path, write_session_state
+
         self._temp_dir = Path(tempfile.mkdtemp(prefix="quicksand-"))
-        self._overlay_path = self._temp_dir / FilePatterns.OVERLAY
-        self._create_overlay()
+        overlay_path = allocate_overlay_path()
+        self._overlay_path = overlay_path
+        self._session_overlays.append(overlay_path)
+        # Claim the path on disk BEFORE the qcow2 actually exists so a
+        # concurrent ``reap_stale_sandboxes`` (its orphan-sweep pass walks
+        # overlays/*.qcow2) sees our claim and skips the file. State entries
+        # for non-existent paths are harmless; the next reap will drop them
+        # naturally when this Sandbox stops or crashes.
+        write_session_state(self._sandbox_id, os.getpid(), self._session_overlays)
+        try:
+            self._create_overlay()
+        except Exception:
+            # Roll the claim back so we don't leave a dangling reference.
+            self._session_overlays.remove(overlay_path)
+            write_session_state(self._sandbox_id, os.getpid(), self._session_overlays)
+            raise
 
     def _launch_process(self) -> None:
         """Generate agent credentials, build the VM command, and start QEMU."""
@@ -165,7 +191,15 @@ class _LifecycleMixin(_SandboxProtocol):
 
         assert self._temp_dir is not None
         console_log_path = self._temp_dir / FilePatterns.CONSOLE_LOG
-        self._process_manager.start(cmd, env, console_log_path)
+
+        from .._overlay_cache import state_file_path
+
+        self._process_manager.start(
+            cmd,
+            env,
+            console_log_path,
+            cleanup_state_file=state_file_path(self._sandbox_id),
+        )
 
     async def _connect_to_guest_agent(self) -> None:
         """Wait for the guest agent; clean up and re-raise on failure."""
@@ -390,6 +424,32 @@ class _LifecycleMixin(_SandboxProtocol):
                 )
             finally:
                 self._temp_dir = None
+
+        # Each session overlay this Sandbox allocated in the overlay cache is now
+        # unreferenced by any live QEMU process we own (we just terminated
+        # it). Delete them — but skip any overlay still claimed by another
+        # state file (e.g., a fork that branched from this Sandbox).
+        from .._overlay_cache import clear_session_state, is_overlay_claimed_elsewhere
+
+        # Drop our state file FIRST so claim-elsewhere checks correctly
+        # exclude ourselves. If we crash mid-loop the reaper / startup GC
+        # picks up where we left off via the surviving state files.
+        try:
+            clear_session_state(self._sandbox_id)
+        except Exception as e:
+            cleanup_errors.append(("sandbox state file", e))
+            logger.debug("Failed to remove sandbox state file: %s", e)
+
+        for overlay in self._session_overlays:
+            if is_overlay_claimed_elsewhere(overlay, exclude_sandbox_id=self._sandbox_id):
+                logger.debug("Keeping overlay %s — still claimed by another Sandbox", overlay)
+                continue
+            try:
+                overlay.unlink(missing_ok=True)
+            except Exception as e:
+                cleanup_errors.append((f"session overlay {overlay.name}", e))
+                logger.warning("Failed to remove session overlay %s: %s", overlay, e)
+        self._session_overlays.clear()
 
         self._overlay_path = None
         self._agent_port = None

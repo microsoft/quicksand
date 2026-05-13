@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Unpack
@@ -21,6 +22,7 @@ from .._types import (
 from ..qemu import OverlayManager, VMProcessManager
 from ._checkpoints import _CheckpointMixin
 from ._execution import _ExecutionMixin
+from ._fork import _ForkMixin
 from ._input import _InputMixin
 from ._lifecycle import _LifecycleMixin
 from ._mounts import _MountMixin
@@ -39,8 +41,31 @@ logger = logging.getLogger("quicksand.sandbox")
 __all__ = ["ExecuteResult", "Sandbox", "SandboxConfig"]
 
 
+_reap_once = False
+
+
+def _reap_stale_once() -> None:
+    """Reap orphan state files left by crashed Sandboxes. Runs once per process."""
+    global _reap_once
+    if _reap_once:
+        return
+    _reap_once = True
+    try:
+        from .._overlay_cache import reap_stale_sandboxes
+
+        reap_stale_sandboxes()
+    except Exception:
+        logger.debug("Stale-sandbox reaper failed", exc_info=True)
+
+
 class Sandbox(
-    _ExecutionMixin, _CheckpointMixin, _SaveMixin, _InputMixin, _LifecycleMixin, _MountMixin
+    _ExecutionMixin,
+    _CheckpointMixin,
+    _SaveMixin,
+    _ForkMixin,
+    _InputMixin,
+    _LifecycleMixin,
+    _MountMixin,
 ):
     """
     Manages a single VM sandbox.
@@ -78,11 +103,14 @@ class Sandbox(
         workspace: str | Path | None = None,
         **kwargs: Unpack[SandboxConfigParams],
     ):
+        _reap_stale_once()
+
         self.config = SandboxConfig.model_validate({"image": image, **kwargs})
         self._progress_callback = progress_callback
         self._save_name = save
         self._workspace = Path(workspace) if workspace else None
         self._is_running = False
+        self._sandbox_id = uuid.uuid4().hex
 
         # Resolution outputs (set during start)
         self._image: ResolvedImage | None = None
@@ -91,6 +119,10 @@ class Sandbox(
         # Runtime state
         self._overlay_path: Path | None = None
         self._temp_dir: Path | None = None
+        # All overlay files this Sandbox allocated in the cache —
+        # the active top plus any intermediates frozen by save() pivots. Each
+        # path is deleted in _cleanup unless it has been handed off to a save.
+        self._session_overlays: list[Path] = []
         self._process_manager = VMProcessManager()
         self._smb_server: Any = None
         self._dynamic_mounts: list = []
@@ -105,6 +137,36 @@ class Sandbox(
         self._overlay_manager: OverlayManager | None = None
         self._runtime_info = None
         self._boot_timing: BootTiming | None = None
+
+    @classmethod
+    def _from_resolved(
+        cls,
+        *,
+        image: ResolvedImage,
+        config: SandboxConfig,
+        progress_callback: Callable[[str, int, int], None] | None = None,
+        save: str | None = None,
+        workspace: str | Path | None = None,
+    ) -> Sandbox:
+        """Construct an unstarted Sandbox with a pre-resolved image.
+
+        Bypasses ``ImageResolver`` — the chain comes verbatim from
+        ``image``. Used by ``fork()`` to give the child the parent's
+        chain plus the frozen overlay produced by the pivot, without
+        touching the resolver layer. Accepts the same non-image
+        constructor parameters so the child can be customised at fork
+        time.
+        """
+        config_kwargs = config.model_dump(exclude={"image"}, exclude_none=False)
+        instance = cls(
+            image=config.image,
+            progress_callback=progress_callback,
+            save=save,
+            workspace=workspace,
+            **config_kwargs,
+        )
+        instance._image = image
+        return instance
 
     @property
     def is_running(self) -> bool:

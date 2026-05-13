@@ -64,16 +64,17 @@ image = _UbuntuImageProvider()
 
 
 def _get_image_artifacts(arch: str | None = None) -> ResolvedImage:
+    from quicksand_core._image_cache import resolve
+
     if arch is None:
         config = get_platform_config()
         arch = "arm64" if config.arch.arch_type == Architecture.ARM64 else "amd64"
 
-    image_path = _IMAGES_DIR / f"ubuntu-{DISTRO_VERSION}-{arch}.qcow2"
+    image_path = resolve(
+        "quicksand-ubuntu", f"ubuntu-{DISTRO_VERSION}-{arch}.qcow2", _IMAGES_DIR
+    ) or resolve("quicksand-ubuntu", f"ubuntu-{DISTRO_VERSION}.qcow2", _IMAGES_DIR)
 
-    if not image_path.exists():
-        image_path = _IMAGES_DIR / f"ubuntu-{DISTRO_VERSION}.qcow2"
-
-    if not image_path.exists():
+    if image_path is None:
         from quicksand_core._auto_install import auto_install_images
 
         if auto_install_images("quicksand-ubuntu", _IMAGES_DIR):

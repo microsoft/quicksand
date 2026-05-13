@@ -41,6 +41,8 @@ class _SandboxProtocol(Protocol):
     _accel: ResolvedAccelerator | None
     _overlay_path: Path | None
     _temp_dir: Path | None
+    _session_overlays: list[Path]
+    _sandbox_id: str
     _process_manager: VMProcessManager
     _smb_server: SMBServer | None
     _dynamic_mounts: list[MountHandle]
@@ -83,6 +85,10 @@ class _SandboxProtocol(Protocol):
         compress: bool = False,
         delete_checkpoints: bool = False,
     ) -> SaveManifest: ...
+
+    # Provided by _SaveMixin; declared here so sibling mixins (_ForkMixin)
+    # can call it through the protocol.
+    async def _pivot_overlay(self, *, delete_checkpoints: bool) -> Path: ...
 
     # Input / display API (implemented by _InputMixin)
 

@@ -25,9 +25,11 @@ class TestSaveCreate:
         save_path = tmp_dir / "my-save"
         assert save_path.is_dir()
         assert (save_path / "manifest.json").exists()
-        assert (save_path / "overlays" / "0.qcow2").exists()
+        # Default save is cache-mode (manifest references cached overlays);
+        # no overlays/ subdir is created.
+        assert not (save_path / "overlays").exists()
 
-        assert manifest.version == 6
+        assert manifest.chain
         assert manifest.config.image == "ubuntu"
 
     @skip_no_qemu
@@ -44,7 +46,7 @@ class TestSaveCreate:
         assert existing.is_dir()
         assert not (existing / "old-file.txt").exists()
         assert (existing / "manifest.json").exists()
-        assert manifest.version == 6
+        assert manifest.chain
 
     @skip_no_qemu
     @pytest.mark.asyncio
@@ -55,5 +57,5 @@ class TestSaveCreate:
 
         save_path = tmp_dir / "my-save"
         manifest = Sandbox.validate_save(save_path)
-        assert manifest.version == 6
+        assert manifest.chain
         assert manifest.config.image == "ubuntu"

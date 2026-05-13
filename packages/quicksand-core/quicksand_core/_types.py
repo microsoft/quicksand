@@ -643,10 +643,33 @@ class SaveManifest(BaseModel):
     """Manifest stored in a save directory's ``manifest.json``.
 
     ``config`` is a ``SandboxConfig`` with ``image`` set to the canonical
-    base image name and ``mounts`` cleared. The save directory's
-    ``overlays/`` subdirectory is the canonical source for the overlay chain.
+    base image name and ``mounts`` cleared.
+
+    ``chain`` is a list of overlay **basenames** in bottom-to-top order.
+    The loader resolves each entry by searching, in order:
+
+    1. ``<save_dir>/overlays/<basename>`` — self-contained "bundled"
+       saves keep their qcow2 files here. The contrib image packages
+       ship this way.
+    2. ``<cache_dir>/overlays/<basename>`` — cache-mode saves reference
+       overlays in the per-user overlay cache; the save dir has no ``overlays/``
+       subdirectory. Cache entries are refcounted via a save-kind state
+       file under ``<cache_dir>/state/``.
+
+    There is no format discriminator: the same loader handles both shapes
+    and the writer decides which on-disk layout to produce based on the
+    sandbox's chain composition.
     """
 
-    version: int
     config: SandboxConfig
     arch: str | None = None
+    chain: list[str]
+    schema_version: int = 1
+
+    @field_validator("chain")
+    @classmethod
+    def _chain_entries_are_basenames(cls, v: list[str]) -> list[str]:
+        for entry in v:
+            if "/" in entry or "\\" in entry:
+                raise ValueError(f"chain entry must be a basename, got {entry!r}")
+        return v

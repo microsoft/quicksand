@@ -61,7 +61,19 @@ def auto_install_images(package_name: str, images_dir: Path) -> bool:
         logger.warning("No compatible wheel found in release %s", tag)
         return False
 
-    return _download_and_extract_images(wheel_url, images_dir)
+    if not _download_and_extract_images(wheel_url, images_dir):
+        return False
+
+    # Mirror into the per-user image cache so backing pointers can reference
+    # a stable path independent of the venv. Non-fatal on failure — the legacy
+    # venv copy still works.
+    try:
+        from ._image_cache import mirror_to_cache
+
+        mirror_to_cache(package_name, images_dir)
+    except Exception:
+        logger.debug("Failed to mirror %s images to cache", package_name, exc_info=True)
+    return True
 
 
 # ---------------------------------------------------------------------------

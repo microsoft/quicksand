@@ -6,7 +6,7 @@ import json
 
 import pytest
 from quicksand_core._types import SandboxConfig, SaveManifest
-from quicksand_core.qemu.image_resolver import SAVE_VERSION, ImageResolver
+from quicksand_core.qemu.image_resolver import ImageResolver
 from quicksand_core.utils import compute_file_sha256
 
 
@@ -17,19 +17,25 @@ class TestSaveManifest:
         """Test creating SaveManifest."""
         config = SandboxConfig(image="test")
         manifest = SaveManifest(
-            version=6,
             config=config,
             arch="x86_64",
+            chain=["0.qcow2"],
         )
-        assert manifest.version == 6
         assert manifest.config.image == "test"
         assert manifest.arch == "x86_64"
+        assert manifest.chain == ["0.qcow2"]
 
     def test_save_manifest_default_arch(self):
         """Test that SaveManifest arch defaults to None."""
         config = SandboxConfig(image="test")
-        manifest = SaveManifest(version=6, config=config)
+        manifest = SaveManifest(config=config, chain=["0.qcow2"])
         assert manifest.arch is None
+
+    def test_chain_rejects_path_components(self):
+        """Test that chain entries must be basenames."""
+        config = SandboxConfig(image="test")
+        with pytest.raises(ValueError, match="basename"):
+            SaveManifest(config=config, chain=["overlays/0.qcow2"])
 
 
 class TestComputeFileSha256:
@@ -71,17 +77,30 @@ class TestLoadManifest:
         return save_dir
 
     def test_load_valid_manifest(self, tmp_dir):
-        """Test loading a valid manifest from save directory."""
+        """Loading a manifest written by Phase 6+ (with explicit chain)."""
         manifest_data = {
-            "version": 6,
             "config": {"image": "ubuntu"},
+            "chain": ["0.qcow2"],
         }
         save_dir = self._create_save_dir(tmp_dir, manifest_data)
 
         result = SaveManifest.model_validate_json((save_dir / "manifest.json").read_text())
 
-        assert result.version == 6
         assert result.config.image == "ubuntu"
+        assert result.chain == ["0.qcow2"]
+
+    def test_legacy_manifest_synthesizes_chain(self, tmp_dir):
+        """Old-style manifest without a chain field is migrated by _load_manifest."""
+        from quicksand_core.qemu.image_resolver import _load_manifest
+
+        manifest_data = {"version": 6, "config": {"image": "ubuntu"}}
+        save_dir = self._create_save_dir(tmp_dir, manifest_data)
+
+        # _load_manifest synthesizes chain from save_dir/overlays/.
+        result = _load_manifest(save_dir)
+
+        assert result.config.image == "ubuntu"
+        assert result.chain == ["0.qcow2"]
 
     def test_missing_manifest(self, tmp_dir):
         """Test error when manifest is missing from save directory."""
@@ -116,8 +135,8 @@ class TestValidateSave:
         save_dir = tmp_dir / "my-save"
         save_dir.mkdir()
         manifest = {
-            "version": SAVE_VERSION,
             "config": {"image": "test-image"},
+            "chain": ["0.qcow2"],
         }
         (save_dir / "manifest.json").write_text(json.dumps(manifest))
         overlays_dir = save_dir / "overlays"
@@ -128,8 +147,8 @@ class TestValidateSave:
     def test_valid_save_passes_validation(self, valid_save):
         """Test that a valid save directory passes validation."""
         result = ImageResolver().validate_save(valid_save)
-        assert result.version == SAVE_VERSION
         assert result.config.image == "test-image"
+        assert result.chain == ["0.qcow2"]
 
     def test_not_a_directory(self, tmp_dir):
         """Test error when path is not a directory."""
@@ -139,48 +158,29 @@ class TestValidateSave:
         with pytest.raises(ValueError, match="not a directory"):
             ImageResolver().validate_save(file_path)
 
-    def test_missing_overlays_dir(self, tmp_dir):
-        """Test error when overlays directory is missing."""
-        save_dir = tmp_dir / "no-overlays"
+    def test_missing_overlay_file(self, tmp_dir):
+        """Test error when a chain entry doesn't resolve to a file."""
+        save_dir = tmp_dir / "missing-overlay"
         save_dir.mkdir()
         manifest = {
-            "version": SAVE_VERSION,
             "config": {"image": "test"},
+            "chain": ["does-not-exist.qcow2"],
         }
         (save_dir / "manifest.json").write_text(json.dumps(manifest))
 
-        with pytest.raises(ValueError, match="Missing overlays"):
+        with pytest.raises(ValueError, match="missing overlays"):
             ImageResolver().validate_save(save_dir)
 
-    def test_version_too_new(self, tmp_dir):
-        """Test error when save version is too new."""
-        save_dir = tmp_dir / "new-version"
+    def test_empty_chain(self, tmp_dir):
+        """Test error when chain is empty (no overlays/ dir to synthesize from)."""
+        save_dir = tmp_dir / "empty-chain"
         save_dir.mkdir()
         manifest = {
-            "version": SAVE_VERSION + 1,
             "config": {"image": "test"},
         }
         (save_dir / "manifest.json").write_text(json.dumps(manifest))
-        overlays_dir = save_dir / "overlays"
-        overlays_dir.mkdir()
-        (overlays_dir / "0.qcow2").write_bytes(b"fake")
 
-        with pytest.raises(ValueError, match="newer than supported"):
-            ImageResolver().validate_save(save_dir)
-
-    def test_empty_overlays_dir(self, tmp_dir):
-        """Test error when overlays directory is empty."""
-        save_dir = tmp_dir / "empty-overlays"
-        save_dir.mkdir()
-        manifest = {
-            "version": SAVE_VERSION,
-            "config": {"image": "test"},
-        }
-        (save_dir / "manifest.json").write_text(json.dumps(manifest))
-        overlays_dir = save_dir / "overlays"
-        overlays_dir.mkdir()
-
-        with pytest.raises(ValueError, match="No overlay files found"):
+        with pytest.raises(ValueError, match="empty chain"):
             ImageResolver().validate_save(save_dir)
 
 
