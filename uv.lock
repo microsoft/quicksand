@@ -33,7 +33,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff" },
     { name = "ty" },
-    { name = "uv-release", specifier = ">=0.36.0" },
+    { name = "uv-release", specifier = ">=0.37.0" },
 ]
 
 [[package]]
@@ -928,7 +928,7 @@ wheels = [
 
 [[package]]
 name = "quick-sandbox"
-version = "0.12.0a1.dev0"
+version = "0.12.0a1"
 source = { editable = "packages/quicksand" }
 dependencies = [
     { name = "quicksand-core" },
@@ -998,7 +998,7 @@ provides-extras = ["qemu", "ubuntu", "alpine", "alpine-desktop", "ubuntu-desktop
 
 [[package]]
 name = "quicksand-agent"
-version = "0.5.0a1.dev0"
+version = "0.5.0a1"
 source = { editable = "packages/contrib/quicksand-agent" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1013,7 +1013,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-alpine"
-version = "0.10.0a1.dev0"
+version = "0.10.0a1"
 source = { editable = "packages/contrib/quicksand-alpine" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1032,7 +1032,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-alpine-desktop"
-version = "0.10.0a1.dev0"
+version = "0.10.0a1"
 source = { editable = "packages/contrib/quicksand-alpine-desktop" }
 dependencies = [
     { name = "quicksand-alpine" },
@@ -1050,7 +1050,7 @@ dev = []
 
 [[package]]
 name = "quicksand-base-scaffold"
-version = "0.4.0a1.dev0"
+version = "0.4.0a1"
 source = { editable = "packages/dev/quicksand-base-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1070,7 +1070,7 @@ source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.12.0a1.dev0"
+version = "0.12.0a1"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "httpx" },
@@ -1087,7 +1087,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-cua"
-version = "0.4.0a1.dev0"
+version = "0.4.0a1"
 source = { editable = "packages/contrib/quicksand-cua" }
 dependencies = [
     { name = "quicksand-agent" },
@@ -1119,7 +1119,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-image-tools"
-version = "0.6.0a1.dev0"
+version = "0.6.0a1"
 source = { editable = "packages/dev/quicksand-image-tools" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1130,7 +1130,7 @@ requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core"
 
 [[package]]
 name = "quicksand-overlay-scaffold"
-version = "0.4.0a1.dev0"
+version = "0.4.0a1"
 source = { editable = "packages/dev/quicksand-overlay-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1147,17 +1147,17 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-qemu"
-version = "0.6.0a1.dev0"
+version = "0.6.0a1"
 source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
 name = "quicksand-smb"
-version = "0.5.0a1.dev0"
+version = "0.5.0a1"
 source = { editable = "packages/quicksand-smb" }
 
 [[package]]
 name = "quicksand-ubuntu"
-version = "0.10.0a1.dev0"
+version = "0.10.0a1"
 source = { editable = "packages/contrib/quicksand-ubuntu" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1176,7 +1176,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-ubuntu-desktop"
-version = "0.10.0a1.dev0"
+version = "0.10.0a1"
 source = { editable = "packages/contrib/quicksand-ubuntu-desktop" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1319,7 +1319,7 @@ wheels = [
 
 [[package]]
 name = "uv-release"
-version = "0.36.0"
+version = "0.37.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "diny" },
@@ -1331,7 +1331,7 @@ dependencies = [
     { name = "tomlkit" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/f8/0d5bea1dcda944d03ffbd269fe613ec7093311693635a7d05ab5caf233c1/uv_release-0.36.0-py3-none-any.whl", hash = "sha256:81e39f88436fa75245dbaea2f68d32dd64dec971e4728c07c94cac3bc13f48ae", size = 139273, upload-time = "2026-05-13T17:19:17.901Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/8d/3df176f43ae47a9f92eede21e064b0b78aaa72f462670390c77e8c75be92/uv_release-0.37.0-py3-none-any.whl", hash = "sha256:04ea9692c2bdaf89482280c28c1b4859cbd1d097850757037ef791328eec8319", size = 139599, upload-time = "2026-05-13T17:59:32.744Z" },
 ]
 
 [[package]]
