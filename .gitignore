@@ -60,3 +60,4 @@ docs/.vitepress/cache/
 gha-runners/local/deps/
 deps/
 gha-runners
+.claude/worktrees/
