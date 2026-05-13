@@ -33,7 +33,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff" },
     { name = "ty" },
-    { name = "uv-release", specifier = ">=0.34.1" },
+    { name = "uv-release", specifier = ">=0.36.0" },
 ]
 
 [[package]]
@@ -473,6 +473,27 @@ wheels = [
 ]
 
 [[package]]
+name = "markdown-it-py"
+version = "4.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mdurl" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/06/ff/7841249c247aa650a76b9ee4bbaeae59370dc8bfd2f6c01f3630c35eb134/markdown_it_py-4.2.0.tar.gz", hash = "sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49", size = 82454, upload-time = "2026-05-07T12:08:28.36Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl", hash = "sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a", size = 91687, upload-time = "2026-05-07T12:08:27.182Z" },
+]
+
+[[package]]
+name = "mdurl"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
 name = "msal"
 version = "1.36.0"
 source = { registry = "https://pypi.org/simple" }
@@ -907,7 +928,7 @@ wheels = [
 
 [[package]]
 name = "quick-sandbox"
-version = "0.12.0.dev0"
+version = "0.12.0a0.dev0"
 source = { editable = "packages/quicksand" }
 dependencies = [
     { name = "quicksand-core" },
@@ -977,7 +998,7 @@ provides-extras = ["qemu", "ubuntu", "alpine", "alpine-desktop", "ubuntu-desktop
 
 [[package]]
 name = "quicksand-agent"
-version = "0.5.0.dev0"
+version = "0.5.0a0.dev0"
 source = { editable = "packages/contrib/quicksand-agent" }
 dependencies = [
     { name = "quicksand-core" },
@@ -992,7 +1013,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-alpine"
-version = "0.10.0.dev0"
+version = "0.10.0a0.dev0"
 source = { editable = "packages/contrib/quicksand-alpine" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1011,7 +1032,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-alpine-desktop"
-version = "0.10.0.dev0"
+version = "0.10.0a0.dev0"
 source = { editable = "packages/contrib/quicksand-alpine-desktop" }
 dependencies = [
     { name = "quicksand-alpine" },
@@ -1029,7 +1050,7 @@ dev = []
 
 [[package]]
 name = "quicksand-base-scaffold"
-version = "0.4.0.dev0"
+version = "0.4.0a0.dev0"
 source = { editable = "packages/dev/quicksand-base-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1049,7 +1070,7 @@ source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.12.0.dev0"
+version = "0.12.0a0.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "httpx" },
@@ -1066,7 +1087,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-cua"
-version = "0.4.0.dev0"
+version = "0.4.0a0.dev0"
 source = { editable = "packages/contrib/quicksand-cua" }
 dependencies = [
     { name = "quicksand-agent" },
@@ -1098,7 +1119,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-image-tools"
-version = "0.6.0.dev0"
+version = "0.6.0a0.dev0"
 source = { editable = "packages/dev/quicksand-image-tools" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1109,7 +1130,7 @@ requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core"
 
 [[package]]
 name = "quicksand-overlay-scaffold"
-version = "0.4.0.dev0"
+version = "0.4.0a0.dev0"
 source = { editable = "packages/dev/quicksand-overlay-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1126,17 +1147,17 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-qemu"
-version = "0.6.0.dev0"
+version = "0.6.0a0.dev0"
 source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
 name = "quicksand-smb"
-version = "0.5.0.dev0"
+version = "0.5.0a0.dev0"
 source = { editable = "packages/quicksand-smb" }
 
 [[package]]
 name = "quicksand-ubuntu"
-version = "0.10.0.dev0"
+version = "0.10.0a0.dev0"
 source = { editable = "packages/contrib/quicksand-ubuntu" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1155,7 +1176,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-ubuntu-desktop"
-version = "0.10.0.dev0"
+version = "0.10.0a0.dev0"
 source = { editable = "packages/contrib/quicksand-ubuntu-desktop" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1184,6 +1205,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5f/a4/98b9c7c6428a668bf7e42ebb7c79d576a1c3c1e3ae2d47e674b468388871/requests-2.33.1.tar.gz", hash = "sha256:18817f8c57c6263968bc123d237e3b8b08ac046f5456bd1e307ee8f4250d3517", size = 134120, upload-time = "2026-03-30T16:09:15.531Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/8e/7540e8a2036f79a125c1d2ebadf69ed7901608859186c856fa0388ef4197/requests-2.33.1-py3-none-any.whl", hash = "sha256:4e6d1ef462f3626a1f0a0a9c42dd93c63bad33f9f1c1937509b8c5c8718ab56a", size = 64947, upload-time = "2026-03-30T16:09:13.83Z" },
+]
+
+[[package]]
+name = "rich"
+version = "15.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "markdown-it-py" },
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
 ]
 
 [[package]]
@@ -1285,7 +1319,7 @@ wheels = [
 
 [[package]]
 name = "uv-release"
-version = "0.34.1"
+version = "0.36.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "diny" },
@@ -1293,10 +1327,11 @@ dependencies = [
     { name = "pydantic" },
     { name = "pygit2" },
     { name = "pyyaml" },
+    { name = "rich" },
     { name = "tomlkit" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/2b/bb64e2a404153b5fc93e122fe86425e36b82e75d58c5f29266afb78fb708/uv_release-0.34.1-py3-none-any.whl", hash = "sha256:3590b80138a2ecccc57486f701c76c29ec3809aff90684d6dd2521dc85b205d8", size = 115003, upload-time = "2026-05-07T02:02:35.792Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/f8/0d5bea1dcda944d03ffbd269fe613ec7093311693635a7d05ab5caf233c1/uv_release-0.36.0-py3-none-any.whl", hash = "sha256:81e39f88436fa75245dbaea2f68d32dd64dec971e4728c07c94cac3bc13f48ae", size = 139273, upload-time = "2026-05-13T17:19:17.901Z" },
 ]
 
 [[package]]
