@@ -255,6 +255,22 @@ def _install_packages(
     return 0
 
 
+def _is_stable_release_tag(tag: str, pkg_name: str) -> bool:
+    """True if *tag* is a stable, non-base release for *pkg_name*.
+
+    Excludes pre-releases (PEP 440 ``aN``/``bN``/``rcN``/``.devN``) and the
+    repo's special ``-base`` / ``-dev`` suffixes.
+    """
+    prefix = f"{pkg_name}/v"
+    if not tag.startswith(prefix):
+        return False
+    if tag.endswith("-base") or tag.endswith("-dev"):
+        return False
+    version = tag[len(prefix) :]
+    # Stable PEP 440 release versions contain only digits and dots.
+    return all(c in "0123456789." for c in version)
+
+
 def _get_latest_release_tag(pkg_name: str) -> str | None:
     """Find the latest per-package release tag (e.g. quicksand-core/v0.3.4)."""
     url = f"{_GITHUB_API}/git/matching-refs/tags/{pkg_name}/v"
@@ -266,9 +282,7 @@ def _get_latest_release_tag(pkg_name: str) -> str | None:
     tags = [
         ref["ref"].removeprefix("refs/tags/")
         for ref in refs
-        if not ref["ref"].endswith("-dev")
-        and ".dev" not in ref["ref"]
-        and not ref["ref"].endswith("-base")
+        if _is_stable_release_tag(ref["ref"].removeprefix("refs/tags/"), pkg_name)
     ]
     return tags[-1] if tags else None
 
@@ -331,12 +345,7 @@ def _resolve_compatible_tag(
     prefix = f"{pkg_name}/v"
     pkg_releases: list[tuple[str, str, str]] = []  # (tag, version, date)
     for tag, date in all_releases.items():
-        if (
-            tag.startswith(prefix)
-            and ".dev" not in tag
-            and not tag.endswith("-base")
-            and not tag.endswith("-dev")
-        ):
+        if _is_stable_release_tag(tag, pkg_name):
             pkg_releases.append((tag, tag[len(prefix) :], date))
 
     if not pkg_releases:
