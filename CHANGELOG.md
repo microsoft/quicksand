@@ -4,6 +4,11 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.12] - 2026-05-14
+
+### Fixed
+- **quick-sandbox:** Declare `packaging` as a runtime dependency. `quicksand.cli.install` imports `packaging.requirements.Requirement` (added in 0.11.11 to parse PEP 508 specifier strings) but `packaging` wasn't in the dependency list — fresh installs hit `ModuleNotFoundError: No module named 'packaging'` at import.
+
 ## [v0.11.11] - 2026-05-13
 
 ### Added
