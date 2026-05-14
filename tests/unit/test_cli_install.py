@@ -1,145 +1,212 @@
-"""Tests for quicksand.cli.install release-tag filtering."""
+"""Tests for quicksand.cli.install (pip-backed installer)."""
 
 from __future__ import annotations
 
-import json
-from io import BytesIO
+import sys
+from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+from quicksand.cli import install as install_mod
 from quicksand.cli.install import (
-    _get_latest_release_tag,
-    _is_stable_release_tag,
-    _resolve_compatible_tag,
+    _ensure_images,
+    _install_packages,
+    _parse_extra,
+    _resolve_packages,
+    _run_pip_install,
+    install,
 )
 
 
-class TestIsStableReleaseTag:
-    def test_accepts_stable_version(self):
-        assert _is_stable_release_tag("quicksand-qemu/v0.5.9", "quicksand-qemu")
+class TestParseExtra:
+    def test_bare_name(self):
+        assert _parse_extra("ubuntu") == ("ubuntu", None)
 
-    def test_accepts_four_segment_version(self):
-        assert _is_stable_release_tag("quicksand-qemu/v1.2.3.4", "quicksand-qemu")
+    def test_pinned_version(self):
+        assert _parse_extra("ubuntu@0.4.0") == ("ubuntu", "0.4.0")
 
-    def test_rejects_alpha_prerelease(self):
-        assert not _is_stable_release_tag("quicksand-qemu/v0.6.0a1", "quicksand-qemu")
-
-    def test_rejects_beta_prerelease(self):
-        assert not _is_stable_release_tag("quicksand-qemu/v0.6.0b2", "quicksand-qemu")
-
-    def test_rejects_rc_prerelease(self):
-        assert not _is_stable_release_tag("quicksand-qemu/v0.6.0rc1", "quicksand-qemu")
-
-    def test_rejects_dev_version(self):
-        assert not _is_stable_release_tag("quicksand-qemu/v0.6.0.dev1", "quicksand-qemu")
-
-    def test_rejects_base_suffix(self):
-        assert not _is_stable_release_tag("quicksand-qemu/v0.6.0-base", "quicksand-qemu")
-
-    def test_rejects_dev_suffix(self):
-        assert not _is_stable_release_tag("quicksand-qemu/v0.6.0-dev", "quicksand-qemu")
-
-    def test_rejects_other_package(self):
-        # Prefix mismatch — tag belongs to a different package name.
-        assert not _is_stable_release_tag("quicksand-qemu-base/v0.6.0", "quicksand-qemu")
-
-    def test_rejects_tag_without_prefix(self):
-        assert not _is_stable_release_tag("v0.6.0", "quicksand-qemu")
+    def test_first_at_only(self):
+        # Versions can't contain "@", so split once.
+        assert _parse_extra("pkg@1.0@beta") == ("pkg", "1.0@beta")
 
 
-def _mock_urlopen(payload: object):
-    """Return a context manager that yields a response with the given JSON body."""
+class TestResolvePackages:
+    def test_alias_expands(self):
+        assert _resolve_packages("ubuntu") == ["quicksand-ubuntu"]
 
-    class _Resp:
-        def __init__(self, body: bytes) -> None:
-            self._body = body
-
-        def read(self) -> bytes:
-            return self._body
-
-        def __enter__(self):
-            return BytesIO(self._body)
-
-        def __exit__(self, *_):
-            return False
-
-    return _Resp(json.dumps(payload).encode())
-
-
-class TestGetLatestReleaseTag:
-    def test_picks_latest_stable_skipping_prereleases(self):
-        # matching-refs returns refs in ascending order; tags[-1] picks the last.
-        refs = [
-            {"ref": "refs/tags/quicksand-qemu/v0.5.8"},
-            {"ref": "refs/tags/quicksand-qemu/v0.5.9"},
-            {"ref": "refs/tags/quicksand-qemu/v0.6.0a1"},
-            {"ref": "refs/tags/quicksand-qemu/v0.6.0.dev1"},
-            {"ref": "refs/tags/quicksand-qemu/v0.5.10.dev0-base"},
+    def test_dev_alias_expands_to_multiple(self):
+        assert _resolve_packages("dev") == [
+            "quicksand-image-tools",
+            "quicksand-overlay-scaffold",
+            "quicksand-base-scaffold",
         ]
-        with patch(
-            "quicksand.cli.install.urllib.request.urlopen",
-            return_value=_mock_urlopen(refs),
-        ):
-            tag = _get_latest_release_tag("quicksand-qemu")
-        assert tag == "quicksand-qemu/v0.5.9"
 
-    def test_ignores_unrelated_prefix(self):
-        # GitHub's matching-refs API matches by string prefix on the ref,
-        # so `quicksand-qemu` could also match `quicksand-qemu-base`. Make
-        # sure the package filter drops the unrelated one.
-        refs = [
-            {"ref": "refs/tags/quicksand-qemu-base/v0.6.0"},
-            {"ref": "refs/tags/quicksand-qemu/v0.5.9"},
+    def test_unknown_is_passthrough(self):
+        # Treated as a literal PyPI name — pip will resolve or fail.
+        assert _resolve_packages("some-random-pkg") == ["some-random-pkg"]
+
+
+class _DummyCompleted:
+    def __init__(self, returncode: int = 0) -> None:
+        self.returncode = returncode
+
+
+class TestRunPipInstall:
+    def test_builds_pip_argv(self):
+        captured: dict = {}
+
+        def fake_run(argv, *_args, **_kwargs):
+            captured["argv"] = argv
+            return _DummyCompleted(0)
+
+        with patch("quicksand.cli.install.subprocess.run", side_effect=fake_run):
+            rc = _run_pip_install(["quicksand-qemu", "quicksand-cua"], {})
+
+        assert rc == 0
+        assert captured["argv"][:7] == [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--upgrade-strategy",
+            "only-if-needed",
         ]
-        with patch(
-            "quicksand.cli.install.urllib.request.urlopen",
-            return_value=_mock_urlopen(refs),
+        # Package args appear unpinned and in order.
+        assert captured["argv"][7:] == ["quicksand-qemu", "quicksand-cua"]
+
+    def test_applies_version_pins(self):
+        captured: dict = {}
+
+        def fake_run(argv, *_args, **_kwargs):
+            captured["argv"] = argv
+            return _DummyCompleted(0)
+
+        with patch("quicksand.cli.install.subprocess.run", side_effect=fake_run):
+            _run_pip_install(
+                ["quicksand-qemu", "quicksand-ubuntu"],
+                {"quicksand-qemu": "0.5.9", "quicksand-ubuntu": None},
+            )
+
+        assert "quicksand-qemu==0.5.9" in captured["argv"]
+        assert "quicksand-ubuntu" in captured["argv"]
+        assert "quicksand-ubuntu==None" not in captured["argv"]
+
+
+@dataclass
+class _FakeDist:
+    name: str
+
+
+class _FakeEntryPoint:
+    def __init__(self, dist_name: str, provider):
+        self.dist = _FakeDist(dist_name)
+        self._provider = provider
+
+    def load(self):
+        return self._provider
+
+
+class _FakeProvider:
+    def __init__(self, images_dir: Path) -> None:
+        self.images_dir = images_dir
+
+
+class TestEnsureImages:
+    def test_skips_packages_not_in_request(self, tmp_path: Path):
+        images = tmp_path / "ubuntu-images"
+        images.mkdir()
+        eps = [_FakeEntryPoint("quicksand-ubuntu", _FakeProvider(images))]
+
+        with (
+            patch("quicksand.cli.install.entry_points", return_value=eps),
+            patch("quicksand_core._auto_install.auto_install_images") as auto,
         ):
-            tag = _get_latest_release_tag("quicksand-qemu")
-        assert tag == "quicksand-qemu/v0.5.9"
+            _ensure_images(packages=["quicksand-qemu"], arch=None)
 
-    def test_returns_none_when_only_prereleases(self):
-        refs = [
-            {"ref": "refs/tags/quicksand-qemu/v0.6.0a1"},
-            {"ref": "refs/tags/quicksand-qemu/v0.6.0b2"},
-        ]
-        with patch(
-            "quicksand.cli.install.urllib.request.urlopen",
-            return_value=_mock_urlopen(refs),
+        auto.assert_not_called()
+
+    def test_skips_when_manifest_present_and_no_arch(self, tmp_path: Path):
+        images = tmp_path / "ubuntu-images"
+        images.mkdir()
+        (images / "manifest.json").write_text("{}")
+        eps = [_FakeEntryPoint("quicksand-ubuntu", _FakeProvider(images))]
+
+        with (
+            patch("quicksand.cli.install.entry_points", return_value=eps),
+            patch("quicksand_core._auto_install.auto_install_images") as auto,
         ):
-            tag = _get_latest_release_tag("quicksand-qemu")
-        assert tag is None
+            _ensure_images(packages=["quicksand-ubuntu"], arch=None)
+
+        auto.assert_not_called()
+
+    def test_fetches_when_manifest_missing(self, tmp_path: Path):
+        images = tmp_path / "ubuntu-images"
+        images.mkdir()  # empty — pure-wheel install case
+        eps = [_FakeEntryPoint("quicksand-ubuntu", _FakeProvider(images))]
+
+        with (
+            patch("quicksand.cli.install.entry_points", return_value=eps),
+            patch("quicksand_core._auto_install.auto_install_images") as auto,
+        ):
+            _ensure_images(packages=["quicksand-ubuntu"], arch=None)
+
+        auto.assert_called_once_with("quicksand-ubuntu", images, arch=None)
+
+    def test_fetches_for_cross_arch_even_with_manifest(self, tmp_path: Path):
+        # --arch forces a refetch so we can overlay images for a different arch.
+        images = tmp_path / "ubuntu-images"
+        images.mkdir()
+        (images / "manifest.json").write_text("{}")
+        eps = [_FakeEntryPoint("quicksand-ubuntu", _FakeProvider(images))]
+
+        with (
+            patch("quicksand.cli.install.entry_points", return_value=eps),
+            patch("quicksand_core._auto_install.auto_install_images") as auto,
+        ):
+            _ensure_images(packages=["quicksand-ubuntu"], arch="amd64")
+
+        auto.assert_called_once_with("quicksand-ubuntu", images, arch="amd64")
 
 
-class TestResolveCompatibleTag:
-    def test_skips_prerelease_when_choosing_baseline(self):
-        # quicksand release on 2026-05-07. 0.6.0a1 was published the day
-        # before but must be ignored — baseline should fall back to 0.5.9.
-        all_releases = {
-            "quicksand-qemu/v0.5.8": "2026-04-20T00:00:00Z",
-            "quicksand-qemu/v0.5.9": "2026-05-01T00:00:00Z",
-            "quicksand-qemu/v0.6.0a1": "2026-05-06T00:00:00Z",
-            "quicksand-qemu/v0.6.0.dev1": "2026-05-05T00:00:00Z",
-        }
-        tag = _resolve_compatible_tag("quicksand-qemu", "2026-05-07T00:00:00Z", all_releases)
-        assert tag == "quicksand-qemu/v0.5.9"
+class TestInstall:
+    def test_pip_failure_raises(self):
+        with (
+            patch(
+                "quicksand.cli.install.subprocess.run",
+                return_value=_DummyCompleted(1),
+            ),
+            pytest.raises(RuntimeError, match="Failed to install"),
+        ):
+            install("qemu")
 
-    def test_picks_newest_patch_in_baseline_series(self):
-        # Patches published after quicksand's release date are still allowed
-        # as long as they share the baseline's major.minor.
-        all_releases = {
-            "quicksand-qemu/v0.5.8": "2026-04-20T00:00:00Z",
-            "quicksand-qemu/v0.5.9": "2026-05-01T00:00:00Z",
-            "quicksand-qemu/v0.5.10": "2026-06-01T00:00:00Z",
-            "quicksand-qemu/v0.6.0a1": "2026-05-15T00:00:00Z",
-            "quicksand-qemu/v0.6.0": "2026-06-15T00:00:00Z",
-        }
-        tag = _resolve_compatible_tag("quicksand-qemu", "2026-05-07T00:00:00Z", all_releases)
-        assert tag == "quicksand-qemu/v0.5.10"
+    def test_no_extras_raises(self):
+        with pytest.raises(ValueError):
+            install()
 
-    def test_returns_none_when_no_stable_releases(self):
-        all_releases = {
-            "quicksand-qemu/v0.6.0a1": "2026-05-06T00:00:00Z",
-            "quicksand-qemu/v0.6.0-base": "2026-05-06T00:00:00Z",
-        }
-        tag = _resolve_compatible_tag("quicksand-qemu", "2026-05-07T00:00:00Z", all_releases)
-        assert tag is None
+    def test_install_packages_skips_image_fetch_on_pip_failure(self):
+        with (
+            patch(
+                "quicksand.cli.install.subprocess.run",
+                return_value=_DummyCompleted(2),
+            ),
+            patch.object(install_mod, "_ensure_images") as ensure,
+        ):
+            rc = _install_packages(["quicksand-ubuntu"], {}, arch=None)
+
+        assert rc == 2
+        ensure.assert_not_called()
+
+    def test_install_packages_calls_image_fetch_on_success(self):
+        with (
+            patch(
+                "quicksand.cli.install.subprocess.run",
+                return_value=_DummyCompleted(0),
+            ),
+            patch.object(install_mod, "_ensure_images") as ensure,
+        ):
+            rc = _install_packages(["quicksand-ubuntu"], {"quicksand-ubuntu": None}, arch="amd64")
+
+        assert rc == 0
+        ensure.assert_called_once_with(["quicksand-ubuntu"], arch="amd64")

@@ -1,9 +1,10 @@
 """Auto-install images from GitHub releases into site-packages.
 
-When ``QUICKSAND_AUTO_INSTALL`` is set to a truthy value, contrib packages
-can call :func:`auto_install_images` to download the fat wheel from GitHub
-Releases and extract image files directly into the installed package's
-``images/`` directory — no pip reinstall needed.
+Contrib packages can call :func:`auto_install_images` to download the fat
+wheel from GitHub Releases and extract image files directly into the
+installed package's ``images/`` directory — no pip reinstall needed.
+
+Enabled by default; set ``QUICKSAND_AUTO_INSTALL=0`` to opt out.
 """
 
 from __future__ import annotations
@@ -21,25 +22,33 @@ from pathlib import Path
 logger = logging.getLogger("quicksand.auto_install")
 
 REPO = "microsoft/quicksand"
-_TRUTHY = {"1", "true", "yes", "on"}
+_FALSY = {"0", "false", "no", "off"}
 
 # File extensions and paths that are image artifacts inside a wheel.
 _IMAGE_GLOBS = ("*.qcow2", "*.kernel", "*.initrd", "manifest.json")
 
 
-def auto_install_images(package_name: str, images_dir: Path) -> bool:
+def auto_install_images(
+    package_name: str,
+    images_dir: Path,
+    arch: str | None = None,
+) -> bool:
     """Download images from the fat wheel on GitHub into *images_dir*.
 
-    Only runs when ``QUICKSAND_AUTO_INSTALL`` is set to a truthy value.
+    Enabled by default; set ``QUICKSAND_AUTO_INSTALL=0`` to opt out.
     Returns ``True`` if images were successfully extracted.
 
     Args:
         package_name: PyPI package name (e.g. ``"quicksand-ubuntu"``).
         images_dir: Destination directory for extracted images
             (typically the package's ``images/`` folder in site-packages).
+        arch: Target arch (``"amd64"``/``"x86_64"``/``"arm64"``/``"aarch64"``).
+            When ``None``, picks the wheel matching the host arch and OS.
+            When set, picks any wheel for the target arch (cross-arch image
+            install — image content is OS-agnostic when extracted).
     """
     val = os.environ.get("QUICKSAND_AUTO_INSTALL", "").strip().lower()
-    if val not in _TRUTHY:
+    if val in _FALSY:
         return False
 
     try:
@@ -56,7 +65,7 @@ def auto_install_images(package_name: str, images_dir: Path) -> bool:
         logger.warning("No GitHub release found for tag %s", tag)
         return False
 
-    wheel_url = _pick_compatible_wheel(assets)
+    wheel_url = _pick_compatible_wheel(assets, arch=arch)
     if not wheel_url:
         logger.warning("No compatible wheel found in release %s", tag)
         return False
@@ -112,10 +121,28 @@ def _host_os_tag() -> str:
     return system
 
 
-def _pick_compatible_wheel(assets: list[dict]) -> str | None:
-    """Pick the best wheel URL for this platform from release assets."""
-    arch = _host_arch()
-    os_tag = _host_os_tag()
+_ARCH_ALIASES: dict[str, tuple[str, ...]] = {
+    "x86_64": ("x86_64", "amd64"),
+    "amd64": ("x86_64", "amd64"),
+    "arm64": ("arm64", "aarch64"),
+    "aarch64": ("arm64", "aarch64"),
+}
+
+
+def _pick_compatible_wheel(assets: list[dict], arch: str | None = None) -> str | None:
+    """Pick the best wheel URL for the host (or *arch*) from release assets.
+
+    Without *arch*: returns the wheel matching both host arch and host OS.
+    With *arch*: returns any non-pure wheel whose name contains the target
+    arch tag — image content is OS-agnostic once extracted, so a foreign-OS
+    wheel works for cross-arch image installs.
+    """
+    if arch is None:
+        target_archs = (_host_arch(),)
+        require_os = _host_os_tag()
+    else:
+        target_archs = _ARCH_ALIASES.get(arch.lower(), (arch.lower(),))
+        require_os = None
 
     for asset in assets:
         name = asset.get("name", "")
@@ -123,8 +150,11 @@ def _pick_compatible_wheel(assets: list[dict]) -> str | None:
             continue
         if "py3-none-any" in name:
             continue  # skip pure wheels
-        if arch in name and os_tag in name:
-            return asset.get("browser_download_url") or asset.get("url")
+        if not any(a in name for a in target_archs):
+            continue
+        if require_os is not None and require_os not in name:
+            continue
+        return asset.get("browser_download_url") or asset.get("url")
     return None
 
 
