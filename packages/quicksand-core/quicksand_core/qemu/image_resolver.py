@@ -15,7 +15,6 @@ import logging
 from importlib.metadata import entry_points
 from pathlib import Path
 
-from .._auto_install import ImagesInstalled
 from .._types import FilePatterns, ResolvedImage, SaveManifest
 from ..host.arch import Architecture, _detect_architecture
 
@@ -201,10 +200,6 @@ class ImageResolver:
                     )
                 logger.info("Resolved base image via entry point: %s", name)
                 return result
-            except ImagesInstalled:
-                # Auto-install fired during this lookup; the in-process state
-                # is now stale. Bubble up to the CLI for a clean re-exec.
-                raise
             except Exception:
                 logger.debug("Failed to load entry point %s", ep.name, exc_info=True)
                 continue

@@ -6,6 +6,12 @@ against the quicksand simple index — which serves every wheel from every
 per-package GitHub release — to upgrade the install to the platform-specific
 fat wheel carrying the actual images.
 
+The Python code in the slim and fat wheels is identical; only the bundled
+image data differs. Pip's ``--force-reinstall`` swaps the files on disk
+under the same ``site-packages`` location, and the calling provider's
+``IMAGES_DIR`` `Path` continues to resolve to that location — so resolution
+can continue in-process after this function returns.
+
 Enabled by default; set ``QUICKSAND_AUTO_INSTALL=0`` to opt out.
 """
 
@@ -25,16 +31,6 @@ logger = logging.getLogger("quicksand.auto_install")
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
-class ImagesInstalled(Exception):
-    """Raised after :func:`auto_install_images` successfully installs a wheel.
-
-    Signals the caller that images were written to disk but the running
-    Python process has stale module / entry-point state from before the
-    install. The operation should be retried in a fresh process; the CLI
-    entry point catches this and ``os.execv``s back into the same command.
-    """
-
-
 def auto_install_images(package_name: str, images_dir: Path) -> bool:
     """Re-install *package_name* against the quicksand simple index.
 
@@ -43,22 +39,25 @@ def auto_install_images(package_name: str, images_dir: Path) -> bool:
     index, which serves the fat wheel from the matching per-package GitHub
     release; pip drops the images into the package's site-packages dir.
 
+    The caller is expected to validate that the resulting files are
+    actually present (e.g. checking for ``manifest.json`` or a specific
+    qcow2) — different contrib packages lay out their image data
+    differently, so this function only reports whether pip succeeded.
+
     Enabled by default; set ``QUICKSAND_AUTO_INSTALL=0`` to opt out.
 
     Args:
         package_name: PyPI package name (e.g. ``"quicksand-ubuntu"``).
-        images_dir: Expected images directory — used only to verify that
-            the reinstall actually placed images.
+        images_dir: Reserved for future use; currently unused but kept in
+            the signature for backwards compatibility with the previous
+            download-and-extract implementation.
 
     Returns:
-        ``False`` if auto-install is disabled or fails.
-
-    Raises:
-        ImagesInstalled: When pip successfully installs the new wheel.
-            Pip subprocess runs cleanly, but the parent process still holds
-            references to the previous (pure-stub) module, so continuing
-            in-process is unreliable — bubble up to the CLI for a re-exec.
+        True if pip exited successfully, False otherwise (auto-install
+        disabled, unknown version, pip failure).
     """
+    del images_dir  # kept for API compatibility; pip handles file placement
+
     val = os.environ.get("QUICKSAND_AUTO_INSTALL", "1").strip().lower()
     if val not in _TRUTHY:
         return False
@@ -93,9 +92,4 @@ def auto_install_images(package_name: str, images_dir: Path) -> bool:
         logger.warning("pip install failed (exit %s)", result.returncode)
         return False
 
-    if not (images_dir / "manifest.json").exists():
-        # Pip succeeded but the new wheel didn't drop a manifest. Treat as
-        # a soft failure so callers can fall back to their own error path.
-        return False
-
-    raise ImagesInstalled(package_name)
+    return True
