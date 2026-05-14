@@ -4,6 +4,24 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.11] - 2026-05-13
+
+### Added
+- **simple index:** every wheel attached to every per-package GitHub release is now exposed as a PEP 503 simple repository at `https://microsoft.github.io/quicksand/simple/`. A new `scripts/ci/build_simple_index.py` regenerates it inside the Pages deploy; a `workflow_run` trigger on the docs workflow refreshes it after each successful release. pip handles version + platform-wheel resolution end-to-end, removing the bespoke GitHub-API resolver previously baked into `quicksand install`.
+- **quicksand-core:** sandbox memory validation — `Sandbox` checks requested memory against the host budget and warns/raises when overrun.
+
+### Changed
+- **quick-sandbox:** `quicksand install` rewritten to shell out to `pip install --index-url https://microsoft.github.io/quicksand/simple/ --extra-index-url https://pypi.org/simple/`. Requirements use standard PEP 508 syntax (`quicksand-qemu==0.5.9`, `ubuntu>=0.4,<0.5`) instead of the old `@version` shorthand; short aliases (`qemu`, `ubuntu`, `dev`, …) still work. Pip's resolver picks versions and platform wheels.
+- **quicksand-core:** `auto_install_images` rewritten to re-install via pip against the simple index instead of fetching wheels directly from the GitHub API. Drops the embedded GitHub API client, the wheel unzipper, and the host-arch / host-OS substring helpers (~150 lines).
+
+### Removed
+- **quick-sandbox:** `quicksand install --arch` flag — pip now selects host wheels and the simple index obviates the previous cross-arch retag dance.
+- **quick-sandbox:** `name@version` syntax in `quicksand install` — use PEP 508 specifiers (`name==version`) instead.
+- **quicksand-core:** `arch` parameter on `auto_install_images` — no remaining callers.
+
+### Released (no user-visible changes)
+- **quicksand-agent, quicksand-alpine, quicksand-alpine-desktop, quicksand-base-scaffold, quicksand-cua, quicksand-image-tools, quicksand-overlay-scaffold, quicksand-qemu, quicksand-smb, quicksand-ubuntu, quicksand-ubuntu-desktop:** internal refactor — versions are now read via `importlib.metadata` instead of hardcoded constants.
+
 ## [v0.11.9] - 2026-05-07
 
 ### Fixed
