@@ -14,18 +14,27 @@ import argparse
 import subprocess
 import sys
 
-from .install import ALIASES, _parse_extra, _resolve_packages
+from .install import ALIASES
 
 
-def uninstall(*extras: str) -> None:
+def _resolve(names: list[str] | tuple[str, ...]) -> list[str]:
+    """Expand aliases and dedupe."""
+    packages: list[str] = []
+    for raw in names:
+        for pkg in ALIASES.get(raw, [raw]):
+            if pkg not in packages:
+                packages.append(pkg)
+    return packages
+
+
+def uninstall(*names: str) -> None:
     """Uninstall quicksand extras.
 
     Args:
-        *extras: One or more extra/package names (e.g. ``"qemu"``, ``"ubuntu"``,
-            ``"all"``).
+        *names: One or more extra/package names (e.g. ``"qemu"``, ``"ubuntu"``).
 
     Raises:
-        ValueError: If no extras are provided.
+        ValueError: If no names are provided.
         RuntimeError: If pip uninstall fails.
 
     Examples::
@@ -33,18 +42,11 @@ def uninstall(*extras: str) -> None:
         from quicksand.cli.uninstall import uninstall
 
         uninstall("qemu", "ubuntu")
-        uninstall("all")
     """
-    if not extras:
-        raise ValueError("At least one extra name is required")
+    if not names:
+        raise ValueError("At least one name is required")
 
-    packages: list[str] = []
-    for raw in extras:
-        name, _ver = _parse_extra(raw)
-        for pkg in _resolve_packages(name):
-            if pkg not in packages:
-                packages.append(pkg)
-
+    packages = _resolve(names)
     rc = _uninstall_packages(packages)
     if rc != 0:
         raise RuntimeError(f"Failed to uninstall packages: {packages}")
@@ -58,7 +60,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Uninstall quicksand extras",
     )
     parser.add_argument(
-        "extras",
+        "names",
         nargs="+",
         metavar="NAME",
         help=(f"Packages to uninstall. Aliases: {all_aliases}."),
@@ -67,14 +69,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def cmd(args: argparse.Namespace) -> int:
     """Uninstall quicksand extras."""
-    packages: list[str] = []
-    for raw in args.extras:
-        name, _ver = _parse_extra(raw)
-        for pkg in _resolve_packages(name):
-            if pkg not in packages:
-                packages.append(pkg)
-
-    return _uninstall_packages(packages)
+    return _uninstall_packages(_resolve(args.names))
 
 
 def _uninstall_packages(packages: list[str]) -> int:

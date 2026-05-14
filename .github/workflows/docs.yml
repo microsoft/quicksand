@@ -7,6 +7,13 @@ on:
       - 'docs/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'scripts/ci/build_simple_index.py'
+      - '.github/workflows/docs.yml'
+  # The Release Wheels workflow tags + publishes per-package GitHub Releases.
+  # Re-run docs after each successful release to refresh the simple/ index.
+  workflow_run:
+    workflows: [Release Wheels]
+    types: [completed]
   workflow_dispatch: {}
 
 permissions:
@@ -20,6 +27,8 @@ concurrency:
 
 jobs:
   build:
+    # workflow_run fires on every Release Wheels completion; gate on success.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +41,12 @@ jobs:
       - run: npm ci
 
       - run: npm run docs:build
+
+      - name: Build PEP 503 simple index from GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/ci/build_simple_index.py docs/.vitepress/dist
 
       - uses: actions/upload-pages-artifact@v3
         with:
