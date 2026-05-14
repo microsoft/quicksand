@@ -26,6 +26,7 @@ import subprocess
 import sys
 
 from packaging.requirements import Requirement
+from quicksand_core._index import PYPI_INDEX_URL, QUICKSAND_INDEX_URL
 
 # Short aliases → actual project names on the simple index / PyPI.
 ALIASES: dict[str, list[str]] = {
@@ -38,12 +39,6 @@ ALIASES: dict[str, list[str]] = {
     "cua": ["quicksand-cua"],
     "dev": ["quicksand-image-tools", "quicksand-overlay-scaffold", "quicksand-base-scaffold"],
 }
-
-# PEP 503 simple index served from the quicksand GitHub Pages site, listing
-# every wheel attached to every per-package GitHub release. Falling back to
-# PyPI keeps transitive dependencies (``pydantic``, ``anyio``, …) resolvable.
-QUICKSAND_INDEX_URL = "https://microsoft.github.io/quicksand/simple/"
-PYPI_INDEX_URL = "https://pypi.org/simple/"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
