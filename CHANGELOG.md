@@ -4,6 +4,11 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.13] - 2026-05-14
+
+### Fixed
+- **quicksand-core / quick-sandbox:** Fresh `quicksand run` of a multi-layer image (e.g. `quicksand-cua` → `quicksand-agent` → `quicksand-ubuntu`) used to download all three fat wheels via `auto_install_images` and *still* fail with `Image not found` on the first invocation — pip wrote new wheels to disk but the parent Python process still held references to the pre-install (pure-stub) modules, their `IMAGES_DIR` paths, and the stale `entry_points()` lookup. `auto_install_images` now raises a new `ImagesInstalled` exception after a successful pip install, `ImageResolver._resolve_base_by_name` re-raises it past its broad `except`, and the CLI catches it at `main()` and `os.execv`s back into the same command. End-to-end, a cold install of an N-layer overlay still produces N pip downloads but interleaves them with N re-execs and the user only types the command once.
+
 ## [v0.11.12] - 2026-05-14
 
 ### Fixed
