@@ -4,6 +4,15 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.11.14] - 2026-05-14
+
+### Fixed
+- **quicksand-core:** `auto_install_images` now trusts pip's exit code instead of additionally requiring `manifest.json` to appear in the images directory. v0.11.12's check happened to work for save-format wheels (`quicksand-cua`, `quicksand-agent`) but spuriously failed for base-image wheels like `quicksand-ubuntu`, which ship `qcow2`/`kernel`/`initrd` directly (no manifest). The contrib provider's own existing file checks decide whether the install delivered what was needed.
+- **quick-sandbox:** Removes the `os.execv` workaround added in 0.11.13 — no longer needed. With the manifest check gone, the resolver chain walks cua → agent → ubuntu cleanly in a single in-process run. Three sequential pip installs, no restarts.
+
+### Removed
+- **quicksand-core:** `ImagesInstalled` exception class. Resolution doesn't need a "restart" signal now that auto-install behaves correctly.
+
 ## [v0.11.13] - 2026-05-14
 
 ### Fixed

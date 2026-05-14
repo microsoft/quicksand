@@ -3,27 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
-
-from quicksand_core._auto_install import ImagesInstalled
 
 from . import clean, dev, install, list_extras, qemu, run, uninstall
 
 
 def main() -> int:
     """Main entry point for the quicksand CLI."""
-    try:
-        return _dispatch()
-    except ImagesInstalled as e:
-        # A provider auto-installed its fat wheel mid-resolve. Pip ran in a
-        # subprocess so the parent's in-memory module state is stale —
-        # restart the process so subsequent resolution sees a clean slate.
-        print(f"\nInstalled images for {e}; restarting...\n", flush=True)
-        os.execv(sys.executable, [sys.executable, *sys.argv])
-
-
-def _dispatch() -> int:
     parser = argparse.ArgumentParser(
         prog="quicksand",
         description="A VM harness for AI agents.",
