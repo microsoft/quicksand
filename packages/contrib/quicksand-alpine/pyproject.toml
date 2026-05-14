@@ -1,17 +1,17 @@
 [project]
 name = "quicksand-alpine"
-version = "0.9.7.dev0"
+version = "0.9.7"
 description = "Pre-built Alpine Linux VM image for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["quicksand-core>=0.11.10,<0.12.0"]
+dependencies = ["quicksand-core>=0.11.11,<0.12.0"]
 
 [dependency-groups]
 dev = ["quicksand-image-tools>=0.4.4"]
 
 [build-system]
-requires = ["hatchling", "quicksand-image-tools>=0.5.3,<0.6.0", "quicksand-core>=0.11.3,<0.12.0", "quicksand-qemu>=0.5.5.dev0,<0.6.0", "quicksand-smb>=0.4.3,<0.5.0"]
+requires = ["hatchling", "quicksand-image-tools>=0.5.11,<0.6.0", "quicksand-core>=0.11.11,<0.12.0", "quicksand-qemu>=0.5.10,<0.6.0", "quicksand-smb>=0.4.9,<0.5.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
