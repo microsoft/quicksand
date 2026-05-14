@@ -25,6 +25,16 @@ logger = logging.getLogger("quicksand.auto_install")
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
+class ImagesInstalled(Exception):
+    """Raised after :func:`auto_install_images` successfully installs a wheel.
+
+    Signals the caller that images were written to disk but the running
+    Python process has stale module / entry-point state from before the
+    install. The operation should be retried in a fresh process; the CLI
+    entry point catches this and ``os.execv``s back into the same command.
+    """
+
+
 def auto_install_images(package_name: str, images_dir: Path) -> bool:
     """Re-install *package_name* against the quicksand simple index.
 
@@ -41,7 +51,13 @@ def auto_install_images(package_name: str, images_dir: Path) -> bool:
             the reinstall actually placed images.
 
     Returns:
-        True if ``manifest.json`` is present in *images_dir* afterwards.
+        ``False`` if auto-install is disabled or fails.
+
+    Raises:
+        ImagesInstalled: When pip successfully installs the new wheel.
+            Pip subprocess runs cleanly, but the parent process still holds
+            references to the previous (pure-stub) module, so continuing
+            in-process is unreliable — bubble up to the CLI for a re-exec.
     """
     val = os.environ.get("QUICKSAND_AUTO_INSTALL", "1").strip().lower()
     if val not in _TRUTHY:
@@ -77,4 +93,9 @@ def auto_install_images(package_name: str, images_dir: Path) -> bool:
         logger.warning("pip install failed (exit %s)", result.returncode)
         return False
 
-    return (images_dir / "manifest.json").exists()
+    if not (images_dir / "manifest.json").exists():
+        # Pip succeeded but the new wheel didn't drop a manifest. Treat as
+        # a soft failure so callers can fall back to their own error path.
+        return False
+
+    raise ImagesInstalled(package_name)
