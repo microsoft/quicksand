@@ -928,9 +928,10 @@ wheels = [
 
 [[package]]
 name = "quick-sandbox"
-version = "0.11.12.dev0"
+version = "0.11.12"
 source = { editable = "packages/quicksand" }
 dependencies = [
+    { name = "packaging" },
     { name = "quicksand-core" },
 ]
 
@@ -974,6 +975,7 @@ ubuntu-desktop = [
 
 [package.metadata]
 requires-dist = [
+    { name = "packaging", specifier = ">=23" },
     { name = "quicksand-agent", marker = "extra == 'agent'", editable = "packages/contrib/quicksand-agent" },
     { name = "quicksand-agent", marker = "extra == 'all'", editable = "packages/contrib/quicksand-agent" },
     { name = "quicksand-alpine", marker = "extra == 'all'", editable = "packages/contrib/quicksand-alpine" },
