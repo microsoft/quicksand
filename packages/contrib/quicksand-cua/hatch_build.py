@@ -44,7 +44,7 @@ async def _setup(shell: Shell) -> None:
         timeout=300,
     )
     await shell(
-        "apt-get install -y novnc websockify socat rsync findutils",
+        "apt-get install -y novnc websockify socat rsync findutils file",
         timeout=300,
     )
 
