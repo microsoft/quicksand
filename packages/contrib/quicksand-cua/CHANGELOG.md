@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.3.10] - 2026-05-17
+
+### Added
+- `file` apt package bundled in the overlay image for content-type detection
+
 ## [v0.3.6] - 2026-05-12
 
 ### Added
