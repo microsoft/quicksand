@@ -98,7 +98,7 @@ jobs:
         uv venv --seed --clear
         source .venv/bin/activate
         uv sync --frozen
-        UV_NO_BUILD_ISOLATION=1 uvr jobs build
+        uvr jobs build
     - id: upload
       uses: actions/upload-artifact@v4
       with:
