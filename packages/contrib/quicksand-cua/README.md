@@ -46,6 +46,7 @@ Everything from [quicksand-agent](../quicksand-agent) (Python 3.12, uv, requests
 - **Fonts** (Liberation, Noto Color Emoji)
 - **flake8** Python linter (`7.1.1`)
 - **findutils** (`find`, `xargs`, `locate`)
+- **file** (`file` command for content-type detection)
 
 All services (Xvfb, x11vnc, Chromium, noVNC) are enabled as systemd units and start automatically on boot.
 
