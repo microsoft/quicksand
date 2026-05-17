@@ -35,7 +35,11 @@ jobs:
       name: Validate release plan
       env:
         UVR_PLAN: ${{ inputs.plan }}
-      run: uv run uvr jobs validate
+      run: |
+        uv venv --seed
+        source .venv/bin/activate
+        uv sync --frozen
+        uvr jobs validate
 
   # --------------------------------------------------------------------------
   # Check (lint, format, types, unit tests)
@@ -54,7 +58,11 @@ jobs:
     - uses: astral-sh/setup-uv@v5
       with:
         enable-cache: false
-    - run: uv run poe ${{ matrix.task }}
+    - run: |
+        uv venv --seed
+        source .venv/bin/activate
+        uv sync --frozen
+        poe ${{ matrix.task }}
 
   # --------------------------------------------------------------------------
   # Build
@@ -86,7 +94,11 @@ jobs:
         UVR_PLAN: ${{ inputs.plan }}
         UVR_RUNNER: ${{ toJSON(matrix.runner) }}
         QUICKSAND_AUTO_INSTALL: "1"
-      run: uv run uvr jobs build
+      run: |
+        uv venv --seed
+        source .venv/bin/activate
+        uv sync --frozen
+        UV_NO_BUILD_ISOLATION=1 uvr jobs build
     - id: upload
       uses: actions/upload-artifact@v4
       with:
@@ -111,7 +123,10 @@ jobs:
         pattern: wheels-*
         path: dist/
         merge-multiple: true
-    - run: uv run --no-project scripts/ci/verify_licenses.py dist/*.whl
+    - run: |
+        uv venv --seed
+        source .venv/bin/activate
+        python scripts/ci/verify_licenses.py dist/*.whl
 
   # # --------------------------------------------------------------------------
   # # Test (integration tests — boot VMs from built wheels)
@@ -189,7 +204,11 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
         RUN_ID: ${{ fromJSON(inputs.plan).reuse_run || github.run_id }}
-      run: uv run uvr jobs release
+      run: |
+        uv venv --seed
+        source .venv/bin/activate
+        uv sync --frozen
+        uvr jobs release
 
   # --------------------------------------------------------------------------
   # Publish — upload wheels to PyPI
@@ -219,7 +238,11 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         UVR_PLAN: ${{ inputs.plan }}
         RUN_ID: ${{ fromJSON(inputs.plan).reuse_run || github.run_id }}
-      run: uv run uvr jobs publish
+      run: |
+        uv venv --seed
+        source .venv/bin/activate
+        uv sync --frozen
+        uvr jobs publish
 
   # --------------------------------------------------------------------------
   # Bump — post-release version bump
@@ -247,4 +270,8 @@ jobs:
       name: Finalize release
       env:
         UVR_PLAN: ${{ inputs.plan }}
-      run: uv run uvr jobs bump
+      run: |
+        uv venv --seed
+        source .venv/bin/activate
+        uv sync --frozen
+        uvr jobs bump
