@@ -18,8 +18,8 @@ default = true
 [tool.uvr.config]
 latest = "quick-sandbox"
 exclude = ["quicksand-gh-runners"]
-workflow_version = "0.30.2a0"
-skill_version = "0.27.1a3"
+skill-version = "0.40.0"
+workflow-version = "0.40.0"
 
 [tool.uvr.runners]
 quicksand-agent = [["self-hosted", "linux", "x64"], ["self-hosted", "macos", "arm64"]]
