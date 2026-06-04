@@ -1,0 +1,57 @@
+diff --git a/src/socket.c b/src/socket.c
+index c491d0f..6d18a53 100644
+--- a/src/socket.c
++++ b/src/socket.c
+@@ -725,6 +725,19 @@ void sorecvfrom(struct socket *so)
+             saddr = addr;
+             sotranslate_in(so, &saddr);
+ 
++            /*
++             * Quicksand: when DNS forwarding is redirected to a host proxy on
++             * a non-53 port ($QUICKSAND_DNS_PROXY), the reply arrives from that
++             * port; restore the source port the guest queried (so_fport, i.e.
++             * 53) so the guest's resolver accepts the reply. No-op in the normal
++             * case, where the real resolver already answers from :53.
++             */
++            if (so->so_ffamily == AF_INET && !so->slirp->disable_dns &&
++                so->so_faddr.s_addr == so->slirp->vnameserver_addr.s_addr &&
++                so->so_fport == htons(53)) {
++                ((struct sockaddr_in *)&saddr)->sin_port = so->so_fport;
++            }
++
+             /* Perform lazy guest IP address resolution if needed. */
+             if (so->so_state & SS_HOSTFWD) {
+                 if (soassign_guest_addr_if_needed(so) < 0) {
+@@ -976,8 +989,30 @@ void sofwdrain(struct socket *so)
+ static bool sotranslate_out4(Slirp *s, struct socket *so, struct sockaddr_in *sin)
+ {
+     if (!s->disable_dns && so->so_faddr.s_addr == s->vnameserver_addr.s_addr) {
+-        return (so->so_fport == htons(53) &&
+-                get_dns_addr(&sin->sin_addr, &sin->sin_port) >= 0);
++        if (so->so_fport != htons(53)) {
++            return false;
++        }
++        /*
++         * Quicksand: when $QUICKSAND_DNS_PROXY is set to a port number,
++         * redirect the upstream DNS that slirp forwards (guest -> 10.0.2.3)
++         * to a host-side proxy on 127.0.0.1:<port>. This bypasses the macOS
++         * libresolv path (get_dns_addr) that picks a single primary resolver
++         * and ignores VPN/split-DNS scoping. Unset => unchanged behavior.
++         */
++        {
++            static int qs_dns_port = -1; /* -1 = unparsed, 0 = disabled */
++            if (qs_dns_port == -1) {
++                const char *e = getenv("QUICKSAND_DNS_PROXY");
++                int p = (e && *e) ? atoi(e) : 0;
++                qs_dns_port = (p > 0 && p <= 65535) ? p : 0;
++            }
++            if (qs_dns_port > 0) {
++                sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
++                sin->sin_port = htons((uint16_t)qs_dns_port);
++                return true;
++            }
++        }
++        return get_dns_addr(&sin->sin_addr, &sin->sin_port) >= 0;
+     }
+ 
+     if (so->so_faddr.s_addr == s->vhost_addr.s_addr ||

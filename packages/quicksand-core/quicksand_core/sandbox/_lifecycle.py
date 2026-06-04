@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import shutil
+import sys
 import tempfile
 import warnings
 from collections.abc import Callable
@@ -147,6 +148,12 @@ class _LifecycleMixin(_SandboxProtocol):
         if self.config.network_mode in (NetworkMode.MOUNTS_ONLY, NetworkMode.FULL):
             self._ensure_smb_server()
 
+        # Start the host DNS proxy (macOS + FULL networking). The bundled
+        # libslirp is patched to redirect guest DNS to QUICKSAND_DNS_PROXY,
+        # which this proxy answers via the OS resolver — fixing VPN/split-DNS
+        # failures that the stock libslirp hits on macOS.
+        self._maybe_start_dns_proxy()
+
         cmd = self._build_vm_command()
         logger.debug(
             "Starting VM: port=%s, image=%s",
@@ -163,9 +170,36 @@ class _LifecycleMixin(_SandboxProtocol):
         ):
             env[EnvironmentVariables.QEMU_MODULE_DIR] = str(self._runtime_info.module_dir)
 
+        if self._dns_proxy is not None:
+            env[EnvironmentVariables.DNS_PROXY] = str(self._dns_proxy.port)
+
         assert self._temp_dir is not None
         console_log_path = self._temp_dir / FilePatterns.CONSOLE_LOG
         self._process_manager.start(cmd, env, console_log_path)
+
+    def _maybe_start_dns_proxy(self) -> None:
+        """Start the host DNS proxy when appropriate.
+
+        Auto-enabled on macOS hosts with ``network_mode=FULL`` (the only mode
+        where the guest reaches the internet). ``config.host_dns_proxy`` forces
+        it on or off. The proxy is the host-side endpoint of the patched
+        libslirp's DNS redirect; see :mod:`quicksand_core.host.dns_proxy`.
+        """
+        override = self.config.host_dns_proxy
+        if override is False:
+            return
+        if sys.platform != "darwin":
+            if override is True:
+                logger.warning("host_dns_proxy is only supported on macOS hosts; ignoring")
+            return
+        if override is None and self.config.network_mode is not NetworkMode.FULL:
+            return
+
+        from ..host.dns_proxy import HostDnsProxy
+
+        proxy = HostDnsProxy()
+        proxy.start()
+        self._dns_proxy = proxy
 
     async def _connect_to_guest_agent(self) -> None:
         """Wait for the guest agent; clean up and re-raise on failure."""
@@ -359,6 +393,14 @@ class _LifecycleMixin(_SandboxProtocol):
         cleanup_errors: list[tuple[str, Exception]] = []
 
         cleanup_errors.extend(await self._cleanup_mounts())
+
+        if self._dns_proxy is not None:
+            try:
+                self._dns_proxy.stop()
+            except Exception as e:
+                cleanup_errors.append(("DNS proxy", e))
+                logger.warning("Failed to stop DNS proxy: %s", e)
+            self._dns_proxy = None
 
         if self._agent_client:
             try:

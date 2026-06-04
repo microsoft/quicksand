@@ -16,6 +16,7 @@ from .._types import (
     SaveManifest,
     Timeouts,
 )
+from ..host.dns_proxy import HostDnsProxy
 from ..host.smb import SMBServer
 from ..qemu import OverlayManager, VMProcessManager
 from ..qemu.platform import RuntimeInfo
@@ -43,6 +44,7 @@ class _SandboxProtocol(Protocol):
     _temp_dir: Path | None
     _process_manager: VMProcessManager
     _smb_server: SMBServer | None
+    _dns_proxy: HostDnsProxy | None
     _dynamic_mounts: list[MountHandle]
     _progress_callback: Callable[[str, int, int], None] | None
     _overlay_manager: OverlayManager | None

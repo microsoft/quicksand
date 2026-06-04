@@ -367,6 +367,11 @@ class EnvironmentVariables:
 
     QEMU_MODULE_DIR = "QEMU_MODULE_DIR"
 
+    # Read by the bundled (patched) libslirp on macOS: when set to a port
+    # number, guest DNS forwarded to 10.0.2.3 is redirected to 127.0.0.1:<port>
+    # where the host DNS proxy answers via the OS resolver. See host/dns_proxy.py.
+    DNS_PROXY = "QUICKSAND_DNS_PROXY"
+
 
 # =============================================================================
 # Guest Commands
@@ -587,6 +592,11 @@ class SandboxConfig(BaseModel):
     accel: Accelerator | Literal["auto"] | None = "auto"
     disk_size: str | None = None
     enable_display: bool = False
+    host_dns_proxy: bool | None = None
+    """Route guest DNS through a host-side proxy that resolves via the OS
+    resolver. Fixes macOS VPN/split-DNS failures (see host/dns_proxy.py).
+    ``None`` (default) auto-enables on macOS hosts with ``network_mode=FULL``;
+    ``True``/``False`` force it on/off. No effect on Linux/Windows hosts."""
 
     @field_validator("memory")
     @classmethod
@@ -623,6 +633,7 @@ class SandboxConfigParams(TypedDict, total=False):
     accel: Accelerator | Literal["auto"] | None
     disk_size: str | None
     enable_display: bool
+    host_dns_proxy: bool | None
 
 
 _td_keys = set(SandboxConfigParams.__annotations__) | {"image"}
