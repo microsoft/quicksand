@@ -99,11 +99,17 @@ class HostDnsProxy:
         return self._port
 
     def start(self) -> None:
-        from dnslib.server import DNSServer
+        from dnslib.server import DNSLogger, DNSServer
 
         resolver = _GetAddrInfoResolver()
+        # Route dnslib's per-request/reply chatter to our logger at DEBUG so it
+        # is suppressed at the default level (prefix=False drops dnslib's own
+        # timestamp since the logging framework adds one).
+        dns_logger = DNSLogger(prefix=False, logf=logger.debug)
         for tcp in (False, True):
-            server = DNSServer(resolver, port=self._port, address="127.0.0.1", tcp=tcp)
+            server = DNSServer(
+                resolver, port=self._port, address="127.0.0.1", tcp=tcp, logger=dns_logger
+            )
             server.start_thread()
             self._servers.append(server)
         logger.info("Host DNS proxy listening on 127.0.0.1:%d (udp+tcp)", self._port)
