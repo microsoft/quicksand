@@ -102,10 +102,12 @@ class HostDnsProxy:
         from dnslib.server import DNSLogger, DNSServer
 
         resolver = _GetAddrInfoResolver()
-        # Route dnslib's per-request/reply chatter to our logger at DEBUG so it
-        # is suppressed at the default level (prefix=False drops dnslib's own
-        # timestamp since the logging framework adds one).
-        dns_logger = DNSLogger(prefix=False, logf=logger.debug)
+        # dnslib logs every request/reply, which floods host logs once a guest
+        # does any DNS (and shows even at DEBUG). Disable those chatty hooks
+        # entirely and keep only errors, routed to our logger at DEBUG
+        # (prefix=False drops dnslib's own timestamp since the logging framework
+        # adds one).
+        dns_logger = DNSLogger(log="-request,-reply,-truncated", prefix=False, logf=logger.debug)
         for tcp in (False, True):
             server = DNSServer(
                 resolver, port=self._port, address="127.0.0.1", tcp=tcp, logger=dns_logger
