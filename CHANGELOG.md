@@ -4,6 +4,25 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [quicksand-core v0.11.14, quicksand-qemu v0.5.11] - 2026-06-22
+
+Stable release of the macOS VPN/split-DNS fix (previously alpha).
+
+### Added
+- **quicksand-core:** `SandboxConfig.host_dns_proxy` and a host-side DNS proxy (`quicksand_core.host.dns_proxy.HostDnsProxy`) that resolves guest DNS via the host OS resolver (`getaddrinfo`). Auto-enabled on macOS hosts with `network_mode=FULL`. Fixes intermittent — often total — guest DNS failures on macOS while connected to a VPN, where stock libslirp forwards DNS to a single libresolv-picked resolver and ignores the system's scoped/split-DNS configuration.
+- **quicksand-qemu:** The bundled macOS libslirp is rebuilt from source with a patch that redirects guest DNS to `$QUICKSAND_DNS_PROXY` (the host proxy above). Inert unless that variable is set; Linux and Windows wheels are unchanged.
+
+### Fixed
+- **quicksand-core:** Silenced dnslib's per-request/reply logging, which flooded host logs (even at DEBUG) once a guest did any DNS. Only error logging remains, routed to the `quicksand.dns_proxy` logger at DEBUG.
+
+## [quicksand-core v0.11.14a0, quicksand-qemu v0.5.11a0] - 2026-06-04
+
+Alpha release fixing macOS guest DNS failures under a VPN.
+
+### Added
+- **quicksand-core:** `SandboxConfig.host_dns_proxy` and a host-side DNS proxy (`quicksand_core.host.dns_proxy.HostDnsProxy`) that resolves guest DNS via the host OS resolver (`getaddrinfo`). Auto-enabled on macOS hosts with `network_mode=FULL`. Fixes intermittent — often total — guest DNS failures on macOS while connected to a VPN, where stock libslirp forwards DNS to a single libresolv-picked resolver and ignores the system's scoped/split-DNS configuration.
+- **quicksand-qemu:** The bundled macOS libslirp is rebuilt from source with a patch that redirects guest DNS to `$QUICKSAND_DNS_PROXY` (the host proxy above). Inert unless that variable is set; Linux and Windows wheels are unchanged.
+
 ## [v0.11.14] - 2026-05-14
 
 ### Fixed

@@ -96,9 +96,8 @@ jobs:
         QUICKSAND_AUTO_INSTALL: "1"
       run: |
         uv venv --seed --clear
-        source .venv/bin/activate
         uv sync --frozen
-        uvr jobs build
+        uv run --no-sync uvr jobs build
     - id: upload
       uses: actions/upload-artifact@v4
       with:

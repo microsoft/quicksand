@@ -25,6 +25,7 @@ overrides = [{ name = "httpx", specifier = ">=0.27,<1" }]
 
 [manifest.dependency-groups]
 dev = [
+    { name = "dnslib", specifier = ">=0.9.24" },
     { name = "hatchling" },
     { name = "poethepoet" },
     { name = "pre-commit", specifier = ">=4.6.0" },
@@ -373,6 +374,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/96/8e/709914eb2b5749865801041647dc7f4e6d00b549cfe88b65ca192995f07c/distlib-0.4.0.tar.gz", hash = "sha256:feec40075be03a04501a973d81f633735b4b69f98b05450592310c0f401a4e0d", size = 614605, upload-time = "2025-07-17T16:52:00.465Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/33/6b/e0547afaf41bf2c42e52430072fa5658766e3d65bd4b03a563d1b6336f57/distlib-0.4.0-py2.py3-none-any.whl", hash = "sha256:9659f7d87e46584a30b5780e43ac7a2143098441670ff0a49d5f9034c54a6c16", size = 469047, upload-time = "2025-07-17T16:51:58.613Z" },
+]
+
+[[package]]
+name = "dnslib"
+version = "0.9.26"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/71/269f74ef9bc8ca453af2e1768d4f4c8e7ef5f894d058d27fd1b69c754d7f/dnslib-0.9.26.tar.gz", hash = "sha256:be56857534390b2fbd02935270019bacc5e6b411d156cb3921ac55a7fb51f1a8", size = 82901, upload-time = "2025-03-03T09:17:32.606Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/93/167364f10194e374119b211e475ed8763d7591ae4f7001b304282dde5825/dnslib-0.9.26-py3-none-any.whl", hash = "sha256:e68719e633d761747c7e91bd241019ef5a2b61a63f56025939e144c841a70e0d", size = 64161, upload-time = "2025-03-03T09:17:31.47Z" },
 ]
 
 [[package]]
@@ -1072,9 +1082,10 @@ source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.11.14.dev0"
+version = "0.11.15.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
+    { name = "dnslib", marker = "sys_platform == 'darwin'" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "quicksand-smb" },
@@ -1082,6 +1093,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dnslib", marker = "sys_platform == 'darwin'", specifier = ">=0.9.24" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "quicksand-smb", editable = "packages/quicksand-smb" },
@@ -1149,7 +1161,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-qemu"
-version = "0.5.11.dev0"
+version = "0.5.12.dev0"
 source = { editable = "packages/quicksand-qemu" }
 
 [[package]]

@@ -93,6 +93,7 @@ class Sandbox(
         self._temp_dir: Path | None = None
         self._process_manager = VMProcessManager()
         self._smb_server: Any = None
+        self._dns_proxy: Any = None
         self._dynamic_mounts: list = []
         self._agent_client: AgentClient | None = None
         self._agent_port: int | None = None

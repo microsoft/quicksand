@@ -990,6 +990,134 @@ class RuntimeBuildHook(BuildHookInterface):
                 "The installer may have failed silently."
             )
 
+    def _ensure_libslirp_build_tools(self) -> None:
+        """Install meson/ninja (needed to build patched libslirp) if missing."""
+        missing = [t for t in ("meson", "ninja") if not shutil.which(t)]
+        if not missing:
+            return
+        if not shutil.which("brew"):
+            raise RuntimeError(
+                "Building patched libslirp requires meson and ninja, but they are "
+                "missing and Homebrew is not available to install them."
+            )
+        subprocess.run(["brew", "install", *missing], check=True)
+        self.app.display_info(f"Installed build tools via Homebrew: {', '.join(missing)}")
+
+    def _patch_libslirp_macos(self, bin_dir: Path) -> None:
+        """Rebuild the bundled libslirp with the quicksand DNS-redirect patch.
+
+        Stock macOS libslirp forwards guest DNS to a single libresolv-picked
+        resolver and ignores the system's scoped/VPN/split-DNS resolvers, so
+        guest DNS fails (often entirely) under a VPN. The patch makes libslirp
+        honor ``$QUICKSAND_DNS_PROXY`` and redirect guest DNS to a host-side
+        proxy (``quicksand_core.host.dns_proxy``) that resolves via the OS
+        resolver. We rebuild the *same* libslirp version Homebrew's QEMU links
+        (ABI-compatible, same SONAME) and swap the dylib into ``bin/lib/``.
+        """
+        import tarfile
+        import tempfile
+        import urllib.request
+
+        lib_dir = bin_dir / "lib"
+        target = lib_dir / "libslirp.0.dylib"
+        if not target.exists():
+            raise RuntimeError(
+                f"Expected bundled libslirp at {target}, but it is missing — "
+                "cannot apply the quicksand DNS patch."
+            )
+
+        patch_file = Path(self.root) / "patches" / "libslirp-dns-proxy.patch"
+        if not patch_file.exists():
+            raise RuntimeError(f"libslirp patch not found: {patch_file}")
+
+        # Guard: we only patch libslirp.0 (SONAME). If QEMU ever links a
+        # different SONAME (e.g. a future libslirp.1), swapping libslirp.0
+        # would silently ship an unpatched QEMU — fail loudly instead.
+        qemu_bin = next(bin_dir.glob("qemu-system-*"), None)
+        if qemu_bin is not None:
+            linked = subprocess.run(
+                ["otool", "-L", str(qemu_bin)], capture_output=True, text=True
+            ).stdout
+            if "libslirp.0.dylib" not in linked:
+                raise RuntimeError(
+                    "Bundled QEMU does not link libslirp.0.dylib — the pinned "
+                    "libslirp patch version is stale. Update LIBSLIRP_VERSION and "
+                    "patches/libslirp-dns-proxy.patch to match QEMU's libslirp."
+                )
+
+        # Pinned: the patch in patches/ is cut against this exact version, and
+        # it is ABI-compatible (same SONAME) with the libslirp QEMU links.
+        # Bump together with the patch when QEMU moves to a newer libslirp.
+        LIBSLIRP_VERSION = "4.9.3"
+        source_url = (
+            f"https://gitlab.freedesktop.org/slirp/libslirp/-/archive/"
+            f"v{LIBSLIRP_VERSION}/libslirp-v{LIBSLIRP_VERSION}.tar.gz"
+        )
+        version = LIBSLIRP_VERSION
+
+        self._ensure_libslirp_build_tools()
+
+        # Build env: ensure Homebrew's bin (meson/ninja/pkg-config) is on PATH.
+        env = dict(os.environ)
+        brew = shutil.which("brew")
+        if brew:
+            brew_bin = str(Path(brew).resolve().parent)
+            if brew_bin not in env.get("PATH", ""):
+                env["PATH"] = f"{brew_bin}:{env.get('PATH', '')}"
+
+        with tempfile.TemporaryDirectory(prefix="quicksand-libslirp-") as tmp_str:
+            tmp = Path(tmp_str)
+            tarball = tmp / "libslirp-src.tar.gz"
+            self.app.display_info(f"Downloading libslirp {version} source from {source_url}")
+            urllib.request.urlretrieve(source_url, tarball)
+            with tarfile.open(tarball) as tf:
+                tf.extractall(tmp)
+
+            src = next(p for p in tmp.iterdir() if p.is_dir() and (p / "meson.build").exists())
+
+            # Apply the patch (paths are a/src/... b/src/... -> -p1, relative to src).
+            with patch_file.open() as pf:
+                subprocess.run(["patch", "-p1"], cwd=src, stdin=pf, check=True)
+
+            build = src / "build"
+            subprocess.run(
+                ["meson", "setup", str(build), "--buildtype=release"],
+                cwd=src,
+                check=True,
+                env=env,
+            )
+            subprocess.run(["ninja", "-C", str(build)], check=True, env=env)
+
+            built = build / "libslirp.0.dylib"
+            if not built.exists():
+                raise RuntimeError(f"libslirp build did not produce {built}")
+
+            # Match the bundle layout: self-id and @loader_path sibling deps.
+            subprocess.run(
+                ["install_name_tool", "-id", "@loader_path/libslirp.0.dylib", str(built)],
+                check=True,
+            )
+            otool = subprocess.run(
+                ["otool", "-L", str(built)], capture_output=True, text=True, check=True
+            )
+            for line in otool.stdout.splitlines()[1:]:
+                dep = line.strip().split(" ")[0]
+                if not dep or dep.startswith("@"):
+                    continue
+                base = Path(dep).name
+                if base == "libslirp.0.dylib" or not (lib_dir / base).exists():
+                    continue
+                subprocess.run(
+                    ["install_name_tool", "-change", dep, f"@loader_path/{base}", str(built)],
+                    check=True,
+                )
+
+            shutil.copy(built, target)
+
+        # Re-sign ad-hoc (install_name_tool invalidated any signature).
+        subprocess.run(["codesign", "--force", "--sign", "-", str(target)], check=True)
+        self.app.display_info(f"Bundled patched libslirp {version} (QUICKSAND_DNS_PROXY redirect)")
+
     def initialize(self, version: str, build_data: dict) -> None:
         """Bundle QEMU binaries into the package."""
         if self.target_name != "wheel" or version == "editable":
@@ -1034,6 +1162,9 @@ class RuntimeBuildHook(BuildHookInterface):
         if system == "darwin":
             bundler.bundle_macos_dylibs(dest_qemu, bin_dir, entitlements_plist=MACOS_ENTITLEMENTS)
             bundler.bundle_macos_dylibs(dest_img, bin_dir)
+            # Replace the bundled libslirp with a patched build that honors
+            # $QUICKSAND_DNS_PROXY (fixes macOS VPN/split-DNS guest DNS).
+            self._patch_libslirp_macos(bin_dir)
         elif system == "linux":
             bundler.bundle_linux_libs(dest_qemu, bin_dir)
             bundler.bundle_linux_libs(dest_img, bin_dir)
