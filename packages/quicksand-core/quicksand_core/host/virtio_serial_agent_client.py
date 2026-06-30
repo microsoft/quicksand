@@ -58,8 +58,22 @@ class VirtioSerialAgentClient:
     are dropped at the reader.
     """
 
-    def __init__(self, socket_path: str | Path, token: str):
-        self._socket_path = str(socket_path)
+    def __init__(
+        self,
+        socket_path: str | Path | None,
+        token: str,
+        *,
+        socket_port: int | None = None,
+    ):
+        # The agent chardev is a Unix domain socket on Linux/macOS (addressed by
+        # filesystem path) and a TCP socket on Windows (addressed by loopback
+        # port), because asyncio has no open_unix_connection on Windows and QEMU
+        # for Windows cannot serve a path-based socket chardev. Exactly one of
+        # socket_path / socket_port is set by the caller.
+        if (socket_path is None) == (socket_port is None):
+            raise ValueError("Provide exactly one of socket_path or socket_port")
+        self._socket_path = str(socket_path) if socket_path is not None else None
+        self._socket_port = socket_port
         self._token = token
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
@@ -105,7 +119,10 @@ class VirtioSerialAgentClient:
         # the successful one so the demux reader doesn't see them.
         auth_writes_pending = 0
 
-        logger.debug("Connecting to agent via virtio-serial: %s", self._socket_path)
+        target = (
+            self._socket_path if self._socket_path is not None else f"127.0.0.1:{self._socket_port}"
+        )
+        logger.debug("Connecting to agent via virtio-serial: %s", target)
 
         while loop.time() < deadline:
             attempt += 1
@@ -120,7 +137,12 @@ class VirtioSerialAgentClient:
             # the virtio-serial device).
             if self._writer is None:
                 try:
-                    reader, writer = await asyncio.open_unix_connection(self._socket_path)
+                    if self._socket_port is not None:
+                        reader, writer = await asyncio.open_connection(
+                            "127.0.0.1", self._socket_port
+                        )
+                    else:
+                        reader, writer = await asyncio.open_unix_connection(self._socket_path)
                     self._reader = reader
                     self._writer = writer
                 except (OSError, ConnectionRefusedError) as e:

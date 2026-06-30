@@ -54,6 +54,8 @@ class _SandboxProtocol(Protocol):
     _agent_client: AgentClient | None
     _agent_port: int | None
     _agent_token: str | None
+    _agent_socket_path: Path | None
+    _agent_socket_port: int | None
     _qmp_client: QMPClient | None
     _qmp_port: int | None
     _qmp_checkpoints: list[str]

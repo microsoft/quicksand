@@ -143,6 +143,7 @@ class PlatformConfig:
         smb_port: int | None = None,
         smb_server: SMBServer | None = None,
         agent_socket_path: Path | None = None,
+        agent_socket_port: int | None = None,
     ) -> list[str]:
         """Build the complete QEMU command line."""
         data_dir = runtime_info.data_dir
@@ -229,8 +230,13 @@ class PlatformConfig:
         if qmp_port is not None:
             cmd.extend(["-qmp", f"tcp:127.0.0.1:{qmp_port},server,nowait"])
 
-        if agent_socket_path is not None:
-            cmd.extend(self._build_virtio_serial_args(agent_socket_path))
+        if agent_socket_path is not None or agent_socket_port is not None:
+            cmd.extend(
+                self._build_virtio_serial_args(
+                    socket_path=agent_socket_path,
+                    socket_port=agent_socket_port,
+                )
+            )
 
         cmd.extend(
             self._build_kernel_args(config, kernel_path, initrd_path, agent_port, agent_token)
@@ -273,17 +279,33 @@ class PlatformConfig:
 
     def _build_virtio_serial_args(
         self,
-        socket_path: Path,
+        socket_path: Path | None = None,
+        socket_port: int | None = None,
     ) -> list[str]:
-        """Build QEMU args for virtio-serial agent channel."""
+        """Build QEMU args for virtio-serial agent channel.
+
+        The host end of the chardev is a Unix domain socket on Linux/macOS
+        (``path=``) and a TCP socket on Windows (``host=``/``port=``), since
+        QEMU for Windows does not support path-based socket chardevs and Python
+        has no ``asyncio.open_unix_connection`` there. Exactly one of
+        ``socket_path`` / ``socket_port`` is provided.
+        """
+        if (socket_path is None) == (socket_port is None):
+            raise ValueError("Provide exactly one of socket_path or socket_port")
+
         use_mmio = self.arch.machine_type == MachineType.VIRT
         serial_device = "virtio-serial-device" if use_mmio else "virtio-serial-pci"
+
+        if socket_port is not None:
+            chardev = f"socket,host=127.0.0.1,port={socket_port},server=on,wait=off,id=vserial0"
+        else:
+            chardev = f"socket,path={socket_path},server=on,wait=off,id=vserial0"
 
         return [
             "-device",
             serial_device,
             "-chardev",
-            f"socket,path={socket_path},server=on,wait=off,id=vserial0",
+            chardev,
             "-device",
             "virtserialport,chardev=vserial0,name=quicksand.agent.0",
         ]

@@ -138,9 +138,17 @@ class _LifecycleMixin(_SandboxProtocol):
         if self.config.enable_display:
             self._vnc_port = find_free_vnc_port()
 
-        # Create virtio-serial socket path for agent communication.
+        # Create the virtio-serial agent chardev endpoint. On Linux/macOS this
+        # is a Unix domain socket addressed by filesystem path. On Windows,
+        # QEMU cannot serve a path-based socket chardev and asyncio has no
+        # open_unix_connection, so we use a loopback TCP socket instead.
         assert self._temp_dir is not None
-        self._agent_socket_path = self._temp_dir / "agent.sock"
+        if sys.platform == "win32":
+            self._agent_socket_path = None
+            self._agent_socket_port = find_free_port()
+        else:
+            self._agent_socket_path = self._temp_dir / "agent.sock"
+            self._agent_socket_port = None
 
         # Start the SMB server early so the guestfwd command can be embedded
         # in the QEMU command line. QuicksandSMBServer uses guestfwd in all
@@ -330,6 +338,7 @@ class _LifecycleMixin(_SandboxProtocol):
             smb_port=smb_port,
             smb_server=self._smb_server,
             agent_socket_path=self._agent_socket_path,
+            agent_socket_port=self._agent_socket_port,
         )
 
     async def _wait_for_guest_agent(self) -> None:
@@ -346,11 +355,15 @@ class _LifecycleMixin(_SandboxProtocol):
 
         # Try virtio-serial first (faster: no guest networking dependency).
         # Fall back to HTTP if the socket path doesn't exist or connection fails.
-        if self._agent_socket_path is not None:
+        if self._agent_socket_path is not None or self._agent_socket_port is not None:
             try:
                 from ..host.virtio_serial_agent_client import VirtioSerialAgentClient
 
-                client = VirtioSerialAgentClient(self._agent_socket_path, self._agent_token)
+                client = VirtioSerialAgentClient(
+                    self._agent_socket_path,
+                    self._agent_token,
+                    socket_port=self._agent_socket_port,
+                )
                 await client.connect(
                     timeout=self._accel.boot_timeout,
                     process_check=check_process,
@@ -358,7 +371,7 @@ class _LifecycleMixin(_SandboxProtocol):
                 self._agent_client = client
                 logger.debug("Connected to agent via virtio-serial")
                 return
-            except (TimeoutError, RuntimeError, OSError) as e:
+            except (TimeoutError, RuntimeError, OSError, NotImplementedError) as e:
                 logger.debug("Virtio-serial connection failed, falling back to HTTP: %s", e)
 
         # Fallback: HTTP via hostfwd
@@ -437,6 +450,7 @@ class _LifecycleMixin(_SandboxProtocol):
         self._agent_port = None
         self._agent_token = None
         self._agent_socket_path = None
+        self._agent_socket_port = None
 
         if cleanup_errors:
             error_summary = "; ".join(f"{resource}: {err}" for resource, err in cleanup_errors)
