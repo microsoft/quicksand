@@ -10,11 +10,20 @@ permissions:
   contents: read
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         task: [check, test:unit]
+        include:
+          # Windows runs the unit suite only. The `check` task is not run on
+          # Windows because `ty` resolves os/asyncio against win32 and reports
+          # platform-API diagnostics (e.g. os.sysconf, os.pread, the existing
+          # `ty: ignore` directives) that are clean under the Linux resolution
+          # the `check` job already enforces.
+          - os: windows-latest
+            task: test:unit
     steps:
       - uses: actions/checkout@v6
         with:

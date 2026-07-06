@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 from quicksand_image_tools.build import (
     _find_initrd,
     _find_kernel,
@@ -114,7 +115,11 @@ class TestGetDirSize:
     def test_ignores_symlinks(self, tmp_dir):
         """Test that symlinks are not counted."""
         (tmp_dir / "file").write_bytes(b"a" * 100)
-        (tmp_dir / "link").symlink_to(tmp_dir / "file")
+        try:
+            (tmp_dir / "link").symlink_to(tmp_dir / "file")
+        except (OSError, NotImplementedError) as e:
+            # Windows needs Administrator or Developer Mode to create symlinks.
+            pytest.skip(f"cannot create symlink on this platform: {e}")
 
         size = _get_dir_size(tmp_dir)
         assert size == 100

@@ -9,6 +9,7 @@ Reference: [MS-SMB2] Sections 2.2.1 (header) and 2.2.3 (negotiate).
 from __future__ import annotations
 
 import os
+import socket
 import struct
 import sys
 from dataclasses import dataclass
@@ -110,6 +111,40 @@ def write_frame(data: bytes) -> None:
     """Write one NetBIOS-framed SMB message to stdout."""
     header = struct.pack(">I", len(data))
     os.write(_stdout_fd, header + data)
+
+
+# ---------------------------------------------------------------------------
+# I/O: read/write over a connected socket
+#
+# Used when the server runs as a persistent TCP listener (Windows) rather than
+# inetd-style over stdin/stdout. ``os.read``/``os.write`` cannot be used on a
+# socket fd on Windows ("Bad file descriptor"), so these go through the socket's
+# own ``recv``/``sendall``.
+# ---------------------------------------------------------------------------
+
+
+def _read_exactly_sock(sock: socket.socket, n: int) -> bytes:
+    """Read exactly n bytes from *sock*, or raise EOFError on close."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise EOFError("socket closed")
+        buf.extend(chunk)
+    return bytes(buf)
+
+
+def read_frame_from_sock(sock: socket.socket) -> bytes:
+    """Read one NetBIOS-framed SMB message from *sock*."""
+    length_bytes = _read_exactly_sock(sock, 4)
+    length = struct.unpack(">I", length_bytes)[0]
+    return _read_exactly_sock(sock, length)
+
+
+def write_frame_to_sock(sock: socket.socket, data: bytes) -> None:
+    """Write one NetBIOS-framed SMB message to *sock*."""
+    header = struct.pack(">I", len(data))
+    sock.sendall(header + data)
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,47 @@ from ._status import (
 
 logger = logging.getLogger("quicksand.smb.query")
 
+
+class _FsStats:
+    """Filesystem capacity in the subset of ``os.statvfs`` fields used below.
+
+    ``os.statvfs`` is POSIX-only; on Windows we derive the same values from
+    ``shutil.disk_usage`` (bytes) using a fixed allocation-unit size.
+    """
+
+    __slots__ = ("f_bavail", "f_bfree", "f_blocks", "f_frsize")
+
+    def __init__(self, f_blocks: int, f_bavail: int, f_bfree: int, f_frsize: int) -> None:
+        self.f_blocks = f_blocks
+        self.f_bavail = f_bavail
+        self.f_bfree = f_bfree
+        self.f_frsize = f_frsize
+
+
+def _fs_stats(path: Path) -> _FsStats | None:
+    """Return filesystem capacity stats for *path*, cross-platform."""
+    if hasattr(os, "statvfs"):
+        try:
+            svfs = os.statvfs(str(path))
+        except OSError:
+            return None
+        return _FsStats(svfs.f_blocks, svfs.f_bavail, svfs.f_bfree, svfs.f_frsize)
+
+    import shutil
+
+    try:
+        usage = shutil.disk_usage(str(path))
+    except OSError:
+        return None
+    frsize = 4096
+    return _FsStats(
+        usage.total // frsize,
+        usage.free // frsize,
+        usage.free // frsize,
+        frsize,
+    )
+
+
 # InfoType values
 SMB2_0_INFO_FILE = 0x01
 SMB2_0_INFO_FILESYSTEM = 0x02
@@ -313,10 +354,7 @@ def _handle_file_info(
 
 def _handle_fs_info(info_class: int, path: Path) -> bytes | None:
     """Build response data for SMB2_0_INFO_FILESYSTEM queries."""
-    try:
-        svfs = os.statvfs(str(path))
-    except OSError:
-        svfs = None
+    svfs = _fs_stats(path)
 
     if info_class == FS_VOLUME_INFORMATION:
         label = "quicksand".encode("utf-16-le")

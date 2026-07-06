@@ -496,7 +496,11 @@ class TestPathTraversal:
 
         # Create symlink inside share pointing outside
         link = share_dir / "escape"
-        link.symlink_to(secret)
+        try:
+            link.symlink_to(secret)
+        except (OSError, NotImplementedError) as e:
+            # Windows needs Administrator or Developer Mode to create symlinks.
+            pytest.skip(f"cannot create symlink on this platform: {e}")
 
         session = self._setup_session(share_dir)
         status = self._try_create(session, "escape")
