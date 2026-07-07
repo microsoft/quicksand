@@ -65,8 +65,11 @@ class _MountMixin(_SandboxProtocol):
 
         ro_opt = ",ro" if readonly else ""
 
-        # QuicksandSMBServer uses guestfwd in ALL modes (no TCP port).
-        # SambaSMBServer uses guestfwd in MOUNTS_ONLY, direct TCP in FULL.
+        # Servers that return a guestfwd command (QuicksandSMBServer) are reached
+        # through the guestfwd virtual IP. Servers without one
+        # (QuicksandSMBTCPServer / WindowsSMBServer) are reached directly through
+        # the slirp gateway (10.0.2.2) at the server's own port in FULL mode, or
+        # via the guestfwd relay in MOUNTS_ONLY mode.
         uses_guestfwd = self._smb_server.get_guestfwd_cmd() is not None
 
         if uses_guestfwd or self.config.network_mode is NetworkMode.MOUNTS_ONLY:

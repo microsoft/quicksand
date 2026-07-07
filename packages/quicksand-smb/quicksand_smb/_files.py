@@ -30,6 +30,34 @@ from ._status import (
     STATUS_SUCCESS,
 )
 
+# Positional file I/O. ``os.pread``/``os.pwrite`` are atomic (no seek) but
+# POSIX-only; Windows has neither, so fall back to ``lseek`` + ``read``/``write``.
+# Each open handle is only touched by its own connection thread, so the
+# non-atomic fallback is safe here.
+if hasattr(os, "pread"):
+
+    def _pread(fd: int, length: int, offset: int) -> bytes:
+        return os.pread(fd, length, offset)
+
+    def _pwrite(fd: int, data: bytes, offset: int) -> int:
+        return os.pwrite(fd, data, offset)
+
+else:
+
+    def _pread(fd: int, length: int, offset: int) -> bytes:
+        os.lseek(fd, offset, os.SEEK_SET)
+        return os.read(fd, length)
+
+    def _pwrite(fd: int, data: bytes, offset: int) -> int:
+        os.lseek(fd, offset, os.SEEK_SET)
+        return os.write(fd, data)
+
+
+# Open in binary mode on Windows so the OS does no CRLF/EOF translation;
+# os.O_BINARY does not exist on POSIX (where all I/O is already binary).
+_O_BINARY = getattr(os, "O_BINARY", 0)
+
+
 # CreateDisposition values
 FILE_SUPERSEDE = 0x00000000
 FILE_OPEN = 0x00000001
@@ -283,7 +311,7 @@ def handle_create(
         if not share_readonly and wants_write:
             flags = os.O_RDWR
         try:
-            fd = os.open(str(target), flags)
+            fd = os.open(str(target), flags | _O_BINARY)
         except PermissionError:
             return build_error_response(req.header, STATUS_ACCESS_DENIED)
         except FileNotFoundError:
@@ -449,7 +477,7 @@ def handle_read(req: SMBRequest, handles: HandleManager) -> bytes:
         return build_error_response(req.header, STATUS_FILE_IS_A_DIRECTORY)
 
     try:
-        data = os.pread(info.fd, length, offset)
+        data = _pread(info.fd, length, offset)
     except OSError:
         return build_error_response(req.header, STATUS_END_OF_FILE)
 
@@ -508,7 +536,7 @@ def handle_write(req: SMBRequest, handles: HandleManager) -> bytes:
     write_data = payload[data_start : data_start + length]
 
     try:
-        written = os.pwrite(info.fd, write_data, offset)
+        written = _pwrite(info.fd, write_data, offset)
     except OSError:
         return build_error_response(req.header, STATUS_ACCESS_DENIED)
 

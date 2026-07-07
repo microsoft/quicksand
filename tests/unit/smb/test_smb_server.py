@@ -496,7 +496,11 @@ class TestPathTraversal:
 
         # Create symlink inside share pointing outside
         link = share_dir / "escape"
-        link.symlink_to(secret)
+        try:
+            link.symlink_to(secret)
+        except (OSError, NotImplementedError) as e:
+            # Windows needs Administrator or Developer Mode to create symlinks.
+            pytest.skip(f"cannot create symlink on this platform: {e}")
 
         session = self._setup_session(share_dir)
         status = self._try_create(session, "escape")
@@ -904,3 +908,47 @@ class TestDynamicConfig:
         header = _smb_header(Command.CREATE, tree_id=2, session_id=1)
         response = _dispatch(session, parse_request(header + body))
         assert _get_status(response) == STATUS_SUCCESS
+
+
+class TestFsInfoSizes:
+    """Regression tests for filesystem-info response sizes ([MS-FSCC] 2.5).
+
+    An undersized FILE_FS_SECTOR_SIZE_INFORMATION (20 bytes instead of the
+    required 28) made the Linux CIFS client reject the reply ("buffer length 20
+    smaller than minimum size 28") and stall statfs, which intermittently
+    wedged mount/unmount cycles. Each class must be at least its fixed size.
+    """
+
+    def test_fs_info_class_sizes(self, tmp_path):
+        from quicksand_smb._query import (
+            FS_ATTRIBUTE_INFORMATION,
+            FS_DEVICE_INFORMATION,
+            FS_FULL_SIZE_INFORMATION,
+            FS_SECTOR_SIZE_INFORMATION,
+            FS_SIZE_INFORMATION,
+            FS_VOLUME_INFORMATION,
+            _handle_fs_info,
+        )
+
+        # info_class -> minimum fixed byte size per MS-FSCC
+        minimums = {
+            FS_VOLUME_INFORMATION: 18,
+            FS_SIZE_INFORMATION: 24,
+            FS_FULL_SIZE_INFORMATION: 32,
+            FS_DEVICE_INFORMATION: 8,
+            FS_ATTRIBUTE_INFORMATION: 12,
+            FS_SECTOR_SIZE_INFORMATION: 28,
+        }
+        for info_class, minimum in minimums.items():
+            out = _handle_fs_info(info_class, tmp_path)
+            assert out is not None, f"class {info_class} returned None"
+            assert len(out) >= minimum, (
+                f"FS info class {info_class} returned {len(out)} bytes, expected >= {minimum}"
+            )
+
+    def test_fs_sector_size_is_28_bytes(self, tmp_path):
+        from quicksand_smb._query import FS_SECTOR_SIZE_INFORMATION, _handle_fs_info
+
+        out = _handle_fs_info(FS_SECTOR_SIZE_INFORMATION, tmp_path)
+        assert out is not None
+        assert len(out) == 28
