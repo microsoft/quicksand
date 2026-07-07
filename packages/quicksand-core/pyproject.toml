@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-core"
-version = "0.11.15.dev0"
+version = "0.11.15"
 description = "Core sandbox functionality for the quicksand VM harness."
 readme = "README.md"
 requires-python = ">=3.11"
