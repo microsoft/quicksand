@@ -429,38 +429,139 @@ async fn run_command(command: &str, timeout_secs: f64, cwd: Option<&str>) -> Exe
 
 const VIRTIO_SERIAL_PATH: &str = "/dev/virtio-ports/quicksand.agent.0";
 
-/// Frame format: 4-byte big-endian length + JSON payload
-async fn read_frame(reader: &mut (impl tokio::io::AsyncReadExt + Unpin)) -> std::io::Result<serde_json::Value> {
+/// Async duplex wrapper over the virtio-serial char device fd.
+///
+/// The port permits only a single open handle, and a buffered `tokio::fs::File`
+/// reconciles its position by seeking whenever reads and writes interleave —
+/// which fails on this non-seekable char device with ESPIPE the moment a
+/// command response is written while the read loop is waiting for the next
+/// frame. Driving the raw fd through `AsyncFd` sidesteps both problems: it is a
+/// single fd used for both directions, and it issues plain `read(2)`/`write(2)`
+/// syscalls (never `lseek`). `AsyncFd` tracks read- and write-readiness
+/// independently, so the read loop and the writer task can make progress
+/// concurrently on the one fd.
+struct SerialChannel {
+    fd: tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>,
+}
+
+impl SerialChannel {
+    fn open(path: &str) -> std::io::Result<Self> {
+        use std::os::fd::{FromRawFd, OwnedFd};
+
+        let c_path = std::ffi::CString::new(path)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        // O_RDWR: one handle for both directions. O_NONBLOCK: required for
+        // AsyncFd readiness-driven I/O.
+        let raw = unsafe { libc::open(c_path.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK) };
+        if raw < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: `raw` is a fresh, valid fd we just opened and now own.
+        let owned = unsafe { OwnedFd::from_raw_fd(raw) };
+        Ok(Self {
+            fd: tokio::io::unix::AsyncFd::new(owned)?,
+        })
+    }
+
+    /// Read exactly `buf.len()` bytes, waiting for readability as needed.
+    async fn read_exact(&self, buf: &mut [u8]) -> std::io::Result<()> {
+        use std::os::fd::AsRawFd;
+
+        let mut filled = 0;
+        while filled < buf.len() {
+            let mut guard = self.fd.readable().await?;
+            let raw = guard.get_ref().as_raw_fd();
+            let dst = &mut buf[filled..];
+            let ret = unsafe { libc::read(raw, dst.as_mut_ptr() as *mut libc::c_void, dst.len()) };
+            if ret < 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::WouldBlock {
+                    guard.clear_ready();
+                    continue;
+                }
+                return Err(err);
+            }
+            if ret == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "virtio-serial channel closed",
+                ));
+            }
+            filled += ret as usize;
+        }
+        Ok(())
+    }
+
+    /// Write the whole buffer, waiting for writability as needed.
+    async fn write_all(&self, buf: &[u8]) -> std::io::Result<()> {
+        use std::os::fd::AsRawFd;
+
+        let mut sent = 0;
+        while sent < buf.len() {
+            let mut guard = self.fd.writable().await?;
+            let raw = guard.get_ref().as_raw_fd();
+            let src = &buf[sent..];
+            let ret = unsafe { libc::write(raw, src.as_ptr() as *const libc::c_void, src.len()) };
+            if ret < 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::WouldBlock {
+                    guard.clear_ready();
+                    continue;
+                }
+                return Err(err);
+            }
+            sent += ret as usize;
+        }
+        Ok(())
+    }
+}
+
+/// Read one length-prefixed JSON frame from the serial channel.
+async fn read_frame_serial(chan: &SerialChannel) -> std::io::Result<serde_json::Value> {
     let mut len_buf = [0u8; 4];
-    reader.read_exact(&mut len_buf).await?;
+    chan.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
     if len > 64 * 1024 * 1024 {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Frame too large"));
     }
     let mut buf = vec![0u8; len];
-    reader.read_exact(&mut buf).await?;
+    chan.read_exact(&mut buf).await?;
     serde_json::from_slice(&buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
-async fn write_frame(writer: &mut (impl tokio::io::AsyncWriteExt + Unpin), msg: &serde_json::Value) -> std::io::Result<()> {
+/// Write one length-prefixed JSON frame to the serial channel.
+async fn write_frame_serial(chan: &SerialChannel, msg: &serde_json::Value) -> std::io::Result<()> {
     let payload = serde_json::to_vec(msg).unwrap();
     let len = (payload.len() as u32).to_be_bytes();
-    writer.write_all(&len).await?;
-    writer.write_all(&payload).await?;
-    writer.flush().await?;
+    chan.write_all(&len).await?;
+    chan.write_all(&payload).await?;
     Ok(())
 }
 
-async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt, BufStream};
+/// Sender used by request handlers to hand output frames to the writer task.
+///
+/// Command handlers run on their own spawned tasks so a long-running command
+/// never blocks the read loop (previously each command was awaited inline, so
+/// one slow command — e.g. `systemctl stop` under WHPX — stalled the reader and
+/// any queued request until it finished, which could wedge the whole session).
+/// Handlers never touch the device directly; they only produce frames. A single
+/// dedicated writer task owns the write handle and drains this channel, so the
+/// frames for different request ids never interleave on the wire.
+type FrameSender = tokio::sync::mpsc::UnboundedSender<serde_json::Value>;
 
-    let file = match tokio::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(VIRTIO_SERIAL_PATH)
-        .await
-    {
-        Ok(f) => f,
+fn send_frame(tx: &FrameSender, msg: serde_json::Value) {
+    // The only way this fails is if the writer task has exited (receiver
+    // dropped), which means the session is already tearing down.
+    let _ = tx.send(msg);
+}
+
+async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
+    // One non-blocking fd drives both directions through `AsyncFd` (see
+    // `SerialChannel`): the port allows only a single open handle, and a
+    // buffered `tokio::fs::File` seeks on read/write interleave (ESPIPE on this
+    // non-seekable char device).
+    let chan = match SerialChannel::open(VIRTIO_SERIAL_PATH) {
+        Ok(c) => Arc::new(c),
         Err(e) => {
             log(&format!("Failed to open {}: {}", VIRTIO_SERIAL_PATH, e));
             return;
@@ -469,12 +570,26 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
 
     log(&format!("Virtio-serial channel open: {}", VIRTIO_SERIAL_PATH));
 
-    let stream = BufStream::new(file);
-    let (mut reader, mut writer) = tokio::io::split(stream);
+    // Dedicated writer task: request handlers (including spawned command tasks)
+    // send frames through this channel; the writer drains it and serialises the
+    // frames onto the wire in arrival order, so responses for different request
+    // ids never interleave. The reader loop below shares the same fd via
+    // `AsyncFd`, which tracks read/write readiness independently.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
+    let writer_chan = Arc::clone(&chan);
+    let writer_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if let Err(e) = write_frame_serial(&writer_chan, &msg).await {
+                log(&format!("Write error: {}", e));
+                break;
+            }
+        }
+    });
+
     let mut authenticated = false;
 
     loop {
-        let frame = match read_frame(&mut reader).await {
+        let frame = match read_frame_serial(&chan).await {
             Ok(f) => f,
             Err(e) => {
                 log(&format!("Virtio-serial read error: {}", e));
@@ -490,56 +605,48 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
             "authenticate" => {
                 let req_token = params.get("token").and_then(|v| v.as_str()).unwrap_or("");
                 authenticated = req_token == token;
-                let resp = serde_json::json!({"id": id, "result": {"authenticated": authenticated}});
-                if let Err(e) = write_frame(&mut writer, &resp).await {
-                    log(&format!("Write error: {}", e));
-                    break;
-                }
+                send_frame(&tx, serde_json::json!({"id": id, "result": {"authenticated": authenticated}}));
             }
             "ping" if authenticated => {
-                let resp = serde_json::json!({"id": id, "result": {"pong": true, "pid": std::process::id()}});
-                if let Err(e) = write_frame(&mut writer, &resp).await {
-                    log(&format!("Write error: {}", e));
-                    break;
-                }
+                send_frame(&tx, serde_json::json!({"id": id, "result": {"pong": true, "pid": std::process::id()}}));
             }
             "execute" if authenticated => {
-                let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let timeout_secs = params.get("timeout").and_then(|v| v.as_f64()).unwrap_or(30.0);
-                let cwd = params.get("cwd").and_then(|v| v.as_str());
+                let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let is_exclusive = params.get("exclusive").and_then(|v| v.as_bool()).unwrap_or(false);
 
                 if exclusive_busy.load(Ordering::SeqCst) {
-                    let resp = serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}});
-                    let _ = write_frame(&mut writer, &resp).await;
+                    send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}}));
                     continue;
                 }
-                if is_exclusive {
-                    if exclusive_busy.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
-                        let resp = serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}});
-                        let _ = write_frame(&mut writer, &resp).await;
-                        continue;
-                    }
+                if is_exclusive
+                    && exclusive_busy
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_err()
+                {
+                    send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}}));
+                    continue;
                 }
 
-                let result = run_command(command, timeout_secs, cwd).await;
+                let tx = tx.clone();
+                let exclusive_busy = Arc::clone(&exclusive_busy);
+                tokio::spawn(async move {
+                    let result = run_command(&command, timeout_secs, cwd.as_deref()).await;
 
-                if is_exclusive {
-                    exclusive_busy.store(false, Ordering::SeqCst);
-                }
-
-                let resp = serde_json::json!({
-                    "id": id,
-                    "result": {
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                        "exit_code": result.exit_code
+                    if is_exclusive {
+                        exclusive_busy.store(false, Ordering::SeqCst);
                     }
+
+                    send_frame(&tx, serde_json::json!({
+                        "id": id,
+                        "result": {
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "exit_code": result.exit_code
+                        }
+                    }));
                 });
-                if let Err(e) = write_frame(&mut writer, &resp).await {
-                    log(&format!("Write error: {}", e));
-                    break;
-                }
             }
             "execute_stream" if authenticated => {
                 let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -548,95 +655,102 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 let is_exclusive = params.get("exclusive").and_then(|v| v.as_bool()).unwrap_or(false);
 
                 if exclusive_busy.load(Ordering::SeqCst) {
-                    let resp = serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}});
-                    let _ = write_frame(&mut writer, &resp).await;
+                    send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}}));
                     continue;
                 }
-                if is_exclusive {
-                    if exclusive_busy.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
-                        let resp = serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}});
-                        let _ = write_frame(&mut writer, &resp).await;
-                        continue;
-                    }
+                if is_exclusive
+                    && exclusive_busy
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_err()
+                {
+                    send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}}));
+                    continue;
                 }
 
-                let timeout_duration = Duration::from_secs_f64(timeout_secs);
+                let tx = tx.clone();
+                let exclusive_busy = Arc::clone(&exclusive_busy);
+                tokio::spawn(async move {
+                    let timeout_duration = Duration::from_secs_f64(timeout_secs);
 
-                let result = timeout(timeout_duration, async {
-                    let mut cmd = tokio::process::Command::new("/bin/sh");
-                    cmd.arg("-c").arg(&command);
-                    cmd.stdout(Stdio::piped());
-                    cmd.stderr(Stdio::piped());
-                    if let Some(dir) = &cwd {
-                        cmd.current_dir(dir);
-                    }
-
-                    let mut child = match cmd.spawn() {
-                        Ok(c) => c,
-                        Err(e) => {
-                            let _ = write_frame(&mut writer, &serde_json::json!({"id": id, "stream": "stderr", "data": e.to_string()})).await;
-                            let _ = write_frame(&mut writer, &serde_json::json!({"id": id, "stream": "exit", "exit_code": -1})).await;
-                            return;
+                    let result = timeout(timeout_duration, async {
+                        let mut cmd = tokio::process::Command::new("/bin/sh");
+                        cmd.arg("-c").arg(&command);
+                        cmd.stdout(Stdio::piped());
+                        cmd.stderr(Stdio::piped());
+                        if let Some(dir) = &cwd {
+                            cmd.current_dir(dir);
                         }
-                    };
 
-                    let stdout = child.stdout.take().unwrap();
-                    let stderr = child.stderr.take().unwrap();
-                    let mut stdout_reader = BufReader::new(stdout).lines();
-                    let mut stderr_reader = BufReader::new(stderr).lines();
+                        let mut child = match cmd.spawn() {
+                            Ok(c) => c,
+                            Err(e) => {
+                                send_frame(&tx, serde_json::json!({"id": id, "stream": "stderr", "data": e.to_string()}));
+                                send_frame(&tx, serde_json::json!({"id": id, "stream": "exit", "exit_code": -1}));
+                                return;
+                            }
+                        };
 
-                    let mut stdout_done = false;
-                    let mut stderr_done = false;
+                        let stdout = child.stdout.take().unwrap();
+                        let stderr = child.stderr.take().unwrap();
+                        let mut stdout_reader = BufReader::new(stdout).lines();
+                        let mut stderr_reader = BufReader::new(stderr).lines();
 
-                    while !stdout_done || !stderr_done {
-                        tokio::select! {
-                            line = stdout_reader.next_line(), if !stdout_done => {
-                                match line {
-                                    Ok(Some(text)) => {
-                                        let _ = write_frame(&mut writer, &serde_json::json!({"id": id, "stream": "stdout", "data": format!("{}\n", text)})).await;
+                        let mut stdout_done = false;
+                        let mut stderr_done = false;
+
+                        while !stdout_done || !stderr_done {
+                            tokio::select! {
+                                line = stdout_reader.next_line(), if !stdout_done => {
+                                    match line {
+                                        Ok(Some(text)) => {
+                                            send_frame(&tx, serde_json::json!({"id": id, "stream": "stdout", "data": format!("{}\n", text)}));
+                                        }
+                                        _ => stdout_done = true,
                                     }
-                                    _ => stdout_done = true,
+                                }
+                                line = stderr_reader.next_line(), if !stderr_done => {
+                                    match line {
+                                        Ok(Some(text)) => {
+                                            send_frame(&tx, serde_json::json!({"id": id, "stream": "stderr", "data": format!("{}\n", text)}));
+                                        }
+                                        _ => stderr_done = true,
+                                    }
                                 }
                             }
-                            line = stderr_reader.next_line(), if !stderr_done => {
-                                match line {
-                                    Ok(Some(text)) => {
-                                        let _ = write_frame(&mut writer, &serde_json::json!({"id": id, "stream": "stderr", "data": format!("{}\n", text)})).await;
-                                    }
-                                    _ => stderr_done = true,
-                                }
-                            }
                         }
+
+                        let exit_code = match child.wait().await {
+                            Ok(status) => status.code().unwrap_or(-1),
+                            Err(_) => -1,
+                        };
+
+                        send_frame(&tx, serde_json::json!({"id": id, "stream": "exit", "exit_code": exit_code}));
+                    })
+                    .await;
+
+                    if result.is_err() {
+                        send_frame(&tx, serde_json::json!({"id": id, "stream": "stderr", "data": format!("Command timed out after {} seconds\n", timeout_secs)}));
+                        send_frame(&tx, serde_json::json!({"id": id, "stream": "exit", "exit_code": -1}));
                     }
 
-                    let exit_code = match child.wait().await {
-                        Ok(status) => status.code().unwrap_or(-1),
-                        Err(_) => -1,
-                    };
-
-                    let _ = write_frame(&mut writer, &serde_json::json!({"id": id, "stream": "exit", "exit_code": exit_code})).await;
-                })
-                .await;
-
-                if result.is_err() {
-                    let _ = write_frame(&mut writer, &serde_json::json!({"id": id, "stream": "stderr", "data": format!("Command timed out after {} seconds\n", timeout_secs)})).await;
-                    let _ = write_frame(&mut writer, &serde_json::json!({"id": id, "stream": "exit", "exit_code": -1})).await;
-                }
-
-                if is_exclusive {
-                    exclusive_busy.store(false, Ordering::SeqCst);
-                }
+                    if is_exclusive {
+                        exclusive_busy.store(false, Ordering::SeqCst);
+                    }
+                });
             }
             _ if !authenticated => {
-                let resp = serde_json::json!({"id": id, "error": {"message": "Not authenticated"}});
-                let _ = write_frame(&mut writer, &resp).await;
+                send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Not authenticated"}}));
             }
             _ => {
-                let resp = serde_json::json!({"id": id, "error": {"message": format!("Unknown method: {}", method)}});
-                let _ = write_frame(&mut writer, &resp).await;
+                send_frame(&tx, serde_json::json!({"id": id, "error": {"message": format!("Unknown method: {}", method)}}));
             }
         }
     }
+
+    // Read loop ended (peer closed or read error). Drop the last sender so the
+    // writer task's channel closes and it exits, then join it.
+    drop(tx);
+    let _ = writer_task.await;
 }
 
 // ============================================================================

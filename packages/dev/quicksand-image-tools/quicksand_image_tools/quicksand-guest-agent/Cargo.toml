@@ -19,6 +19,12 @@ serde_json = "1"
 # SSE streaming support
 tokio-stream = "0.1"
 
+# Raw fd control for the virtio-serial char device. The port allows only a
+# single open handle and a buffered `tokio::fs::File` seeks when reads and
+# writes interleave (ESPIPE on a non-seekable char device), so the transport
+# drives one non-blocking fd through `tokio::io::unix::AsyncFd` instead.
+libc = "0.2"
+
 [profile.release]
 opt-level = "z"     # Optimize for size
 lto = true          # Link-time optimization

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -122,6 +123,29 @@ class TestGetDirSize:
             pytest.skip(f"cannot create symlink on this platform: {e}")
 
         size = _get_dir_size(tmp_dir)
+        assert size == 100
+
+    def test_skips_unstattable_entries(self, tmp_dir):
+        """Entries that raise OSError on stat are skipped, not fatal.
+
+        On Windows the rootfs is extracted from a Linux tar and some entries
+        (device nodes, restricted dirs) cannot be stat-ed; the walk must
+        tolerate that instead of aborting the build.
+        """
+        (tmp_dir / "good").write_bytes(b"a" * 100)
+        (tmp_dir / "bad").write_bytes(b"b" * 999)
+
+        real_stat = Path.stat
+
+        def flaky_stat(self, *args, **kwargs):
+            if self.name == "bad":
+                raise PermissionError("cannot stat")
+            return real_stat(self, *args, **kwargs)
+
+        with patch.object(Path, "stat", flaky_stat):
+            size = _get_dir_size(tmp_dir)
+
+        # Only the stat-able file counts; no exception is raised.
         assert size == 100
 
 
