@@ -943,8 +943,7 @@ class TestFsInfoSizes:
             out = _handle_fs_info(info_class, tmp_path)
             assert out is not None, f"class {info_class} returned None"
             assert len(out) >= minimum, (
-                f"FS info class {info_class} returned {len(out)} bytes, "
-                f"expected >= {minimum}"
+                f"FS info class {info_class} returned {len(out)} bytes, expected >= {minimum}"
             )
 
     def test_fs_sector_size_is_28_bytes(self, tmp_path):
