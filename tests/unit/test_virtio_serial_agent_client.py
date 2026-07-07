@@ -7,6 +7,7 @@ import contextlib
 import json
 import socket
 import struct
+import sys
 from collections.abc import Awaitable, Callable
 from unittest.mock import patch
 
@@ -16,6 +17,15 @@ from quicksand_core.host.virtio_serial_agent_client import VirtioSerialAgentClie
 _HEADER_FMT = "!I"
 _HEADER_SIZE = struct.calcsize(_HEADER_FMT)
 _TEST_TOKEN = "test-token"
+
+# On Windows the client connects with asyncio.open_connection(host, port) (there is
+# no open_unix_connection); on Linux/macOS it uses asyncio.open_unix_connection(path).
+_IS_WINDOWS = sys.platform == "win32"
+
+# A dummy endpoint passed to the client constructor; the actual connection is
+# always supplied by _patch_connect, so the value is never dialed.
+_DUMMY_SOCKET_PATH = "/unused"
+_DUMMY_SOCKET_PORT = 1
 
 
 def _encode_frame(msg: dict) -> bytes:
@@ -49,8 +59,33 @@ def _socketpair() -> tuple[socket.socket, socket.socket]:
     return a, b
 
 
+def _make_client() -> VirtioSerialAgentClient:
+    """Construct a client the way the current platform's lifecycle code does.
+
+    Windows uses a loopback TCP port; Linux/macOS use a Unix socket path. The
+    endpoint is a dummy because _patch_connect injects the real connection.
+    """
+    if _IS_WINDOWS:
+        return VirtioSerialAgentClient(None, token=_TEST_TOKEN, socket_port=_DUMMY_SOCKET_PORT)
+    return VirtioSerialAgentClient(_DUMMY_SOCKET_PATH, token=_TEST_TOKEN)
+
+
 def _patch_connect(client_sock: socket.socket):
-    """Patch ``open_unix_connection`` so the client connects via *client_sock*."""
+    """Patch the platform's connect call so the client uses *client_sock*.
+
+    On Windows the client calls ``asyncio.open_connection(host, port)``
+    On other platforms it calls ``asyncio.open_unix_connection(path)``.
+    """
+    if _IS_WINDOWS:
+        real_open_connection = asyncio.open_connection
+
+        async def _fake(*args, **kwargs):
+            # FakeAgent's own server-side setup passes sock=...; let it through.
+            if "sock" in kwargs:
+                return await real_open_connection(*args, **kwargs)
+            return await real_open_connection(sock=client_sock)
+
+        return patch("asyncio.open_connection", side_effect=_fake)
 
     async def _fake(*_a, **_kw):
         return await asyncio.open_connection(sock=client_sock)
@@ -136,7 +171,7 @@ class FakeAgent:
 
 
 async def _connected_client(agent: FakeAgent) -> VirtioSerialAgentClient:
-    client = VirtioSerialAgentClient("/unused", token=_TEST_TOKEN)
+    client = _make_client()
     with _patch_connect(agent.client_sock):
         await client.connect(timeout=5.0)
     return client
@@ -162,7 +197,7 @@ async def test_wrong_id_frame_does_not_raise_mismatch() -> None:
         srv_writer.write(_encode_frame(msg))
     await srv_writer.drain()
 
-    client = VirtioSerialAgentClient("/unused", token=_TEST_TOKEN)
+    client = _make_client()
     try:
         with _patch_connect(c):
             await client.connect(timeout=5.0)

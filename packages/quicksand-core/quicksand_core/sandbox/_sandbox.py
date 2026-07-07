@@ -99,6 +99,7 @@ class Sandbox(
         self._agent_port: int | None = None
         self._agent_token: str | None = None
         self._agent_socket_path: Path | None = None
+        self._agent_socket_port: int | None = None
         self._qmp_client: QMPClient | None = None
         self._qmp_port: int | None = None
         self._qmp_checkpoints: list[str] = []
