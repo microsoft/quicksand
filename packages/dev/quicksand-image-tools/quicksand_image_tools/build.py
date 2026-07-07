@@ -106,7 +106,9 @@ def build_image(
     try:
         log.info("[1/5] Building Docker image...")
 
-        with tempfile.TemporaryDirectory(prefix="quicksand-build-") as tmpdir:
+        with tempfile.TemporaryDirectory(
+            prefix="quicksand-build-", ignore_cleanup_errors=True
+        ) as tmpdir:
             tmpdir_path = Path(tmpdir)
 
             # Build Docker image
@@ -228,7 +230,12 @@ def _tar_to_qcow2(tar_path: Path, qcow2_path: Path, log: logging.Logger = logger
             "    Windows: https://www.qemu.org/download/#windows"
         )
 
-    with tempfile.TemporaryDirectory(prefix="quicksand-convert-") as tmpdir:
+    # ignore_cleanup_errors: the extracted Linux rootfs contains files whose
+    # permissions Windows cannot remove, so tolerate rmtree failures on exit
+    # (the OS reclaims the temp dir eventually).
+    with tempfile.TemporaryDirectory(
+        prefix="quicksand-convert-", ignore_cleanup_errors=True
+    ) as tmpdir:
         tmpdir_path = Path(tmpdir)
 
         # Extract tar on host to get kernel/initrd
@@ -415,9 +422,19 @@ def _find_initrd(rootfs: Path) -> Path | None:
 
 
 def _get_dir_size(path: Path) -> int:
-    """Get the total size of a directory in bytes."""
+    """Get the total size of a directory in bytes.
+
+    Entries that cannot be stat-ed are skipped. On Windows the rootfs is
+    extracted from a Linux tar, so some entries (device nodes, restricted
+    directories) raise OSError on stat; they are irrelevant to the size
+    estimate, which only needs a rough lower bound (the caller pads it and
+    rounds up when allocating the ext4 image).
+    """
     total = 0
     for entry in path.rglob("*"):
-        if entry.is_file() and not entry.is_symlink():
-            total += entry.stat().st_size
+        try:
+            if entry.is_file() and not entry.is_symlink():
+                total += entry.stat().st_size
+        except OSError:
+            continue
     return total
