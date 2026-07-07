@@ -102,7 +102,7 @@ packages/
 
 **quicksand-qemu** — pre-built QEMU binaries via `get_bin_dir()`. Installed via `quicksand install qemu`. Separate from core so the core works with any QEMU installation.
 
-**quicksand-smb** — pure-Python SMB3 server for host-guest directory mounting. Runs in inetd mode (stdin/stdout), spawned per-connection by QEMU's `guestfwd=cmd:`. No TCP port opened on the host, no external dependencies.
+**quicksand-smb** — pure-Python SMB3 server for host-guest directory mounting. On macOS/Linux it runs in inetd mode (stdin/stdout), spawned per-connection by QEMU's `guestfwd=cmd:`, with no TCP port opened on the host. On Windows it is served in-process by quicksand-core on a loopback-only TCP listener. No external dependencies.
 
 **quicksand-build-tools** — shared build-time utilities for bundling native binaries into platform-specific wheels. Used by quicksand-qemu build hooks. Provides `BinaryBundler` with platform-specific logic for copying shared libraries, rewriting paths (install_name_tool on macOS, patchelf on Linux), and codesigning.
 
@@ -189,7 +189,7 @@ quicksand_core/
 │   ├── arch.py             # Architecture enum + detection
 │   ├── os_.py              # OS detection, accelerator detection, OS-level config
 │   ├── quicksand_guest_agent_client.py  # HTTP client for host→guest agent communication
-│   └── smb.py              # SMB server hierarchy (QuicksandSMBServer, WindowsSMBServer)
+│   └── smb.py              # SMB server hierarchy (QuicksandSMBServer, QuicksandSMBTCPServer, WindowsSMBServer)
 ├── qemu/                   # QEMU-specific subsystems
 │   ├── arch.py             # QEMU architecture configs (machine types, binary names)
 │   ├── platform.py         # PlatformConfig, QEMU command building, runtime detection
@@ -304,7 +304,7 @@ HTTP client for host→guest communication over the QEMU user-mode network port 
 
 ### SMBServer (`host/smb.py`)
 
-Cross-platform SMB file sharing. `SMBServer` is the abstract base class. `QuicksandSMBServer` (macOS/Linux, pure-Python SMB3 via QEMU guestfwd) and `WindowsSMBServer` (PowerShell) are concrete implementations. Shares are named `QUICKSAND0`, `QUICKSAND1`, etc. Supports dynamic add/remove of shares at runtime for hot-mounting.
+Cross-platform SMB file sharing. `SMBServer` is the abstract base class. `QuicksandSMBServer` (macOS/Linux, pure-Python SMB3 via QEMU guestfwd) and `QuicksandSMBTCPServer` (Windows default — the same pure-Python SMB3 server on a loopback-only TCP listener, no Administrator required) are concrete implementations. `WindowsSMBServer` (PowerShell New-SmbShare) remains available as an opt-in via `QUICKSAND_WINDOWS_NATIVE_SMB=1`. Shares are named `QUICKSAND0`, `QUICKSAND1`, etc. Supports dynamic add/remove of shares at runtime for hot-mounting.
 
 ---
 
@@ -343,10 +343,13 @@ Host                                          Guest (10.0.2.15)
 └──────────────────────────┘                 └─────────────────────┘
 ```
 
+(Diagram shows the macOS/Linux inetd transport. On Windows the same server runs in-process on a loopback TCP listener instead of being spawned per-connection.)
+
 **SMB server hierarchy** (`host/smb.py`):
 - `SMBServer` — abstract base class with `start()`, `stop()`, `add_share()`, `remove_share()`
 - `QuicksandSMBServer` — macOS/Linux: pure-Python SMB3 server (`quicksand-smb`) spawned per-connection by QEMU's `guestfwd` in inetd mode (stdin/stdout). No TCP port opened on the host, no external dependencies.
-- `WindowsSMBServer` — Windows: uses native `New-SmbShare` / `Remove-SmbShare` via PowerShell.
+- `QuicksandSMBTCPServer` — Windows default: the same pure-Python SMB3 server run in-process on a loopback-only (127.0.0.1) TCP listener. Requires no Administrator rights.
+- `WindowsSMBServer` — Windows opt-in (`QUICKSAND_WINDOWS_NATIVE_SMB=1`): uses native `New-SmbShare` / `Remove-SmbShare` via PowerShell.
 - `create_smb_server()` — factory that returns the appropriate implementation.
 
 ### Boot-time mounts
@@ -382,7 +385,7 @@ Mounts work with `MOUNTS_ONLY` (default) or `FULL` network modes. In `MOUNTS_ONL
 sudo mount -t cifs //10.0.2.100/QUICKSAND0 /mnt/data -o username=guest,password=,sec=none,vers=3.0,port=445
 ```
 
-In `MOUNTS_ONLY` mode, `10.0.2.100` is the guestfwd virtual IP. QEMU routes guest connections to the SMB server's stdin/stdout. In `FULL` mode, the guest connects to the host via the slirp gateway (`10.0.2.2`).
+In `MOUNTS_ONLY` mode, `10.0.2.100` is the guestfwd virtual IP. On macOS/Linux, QEMU routes guest connections to the SMB server's stdin/stdout. For the Windows TCP server, the guestfwd tunnel is relayed through a small helper (`_tcp_relay.py`) to the loopback listener. In `FULL` mode, the guest connects to the host via the slirp gateway (`10.0.2.2`).
 
 ---
 
@@ -668,7 +671,7 @@ Starts the QMP server on a random free port alongside QEMU. TCP transport is use
 | `quicksand_core/host/arch.py` | `Architecture` enum and host CPU detection |
 | `quicksand_core/host/os_.py` | OS configs, accelerator detection |
 | `quicksand_core/host/quicksand_guest_agent_client.py` | HTTP client for guest agent |
-| `quicksand_core/host/smb.py` | SMB server hierarchy (SMBServer ABC, QuicksandSMBServer, WindowsSMBServer) |
+| `quicksand_core/host/smb.py` | SMB server hierarchy (SMBServer ABC, QuicksandSMBServer, QuicksandSMBTCPServer, WindowsSMBServer) |
 | `quicksand_core/qemu/arch.py` | QEMU arch configs (`X86_64Config`, `ARM64Config`) |
 | `quicksand_core/qemu/platform.py` | `PlatformConfig`, QEMU command building, runtime detection |
 | `quicksand_core/qemu/process.py` | `VMProcessManager` — QEMU subprocess lifecycle |
