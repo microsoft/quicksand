@@ -4,6 +4,24 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [quicksand-core v0.12.0, quicksand-smb v0.5.0, quicksand-image-tools v0.5.14] - 2026-07-07
+
+Windows file sharing no longer needs Administrator rights, and SMB remount reliability is fixed on all platforms.
+
+### Added
+- **quicksand-smb:** New public `serve_socket(sock, config)` entry point that serves one SMB connection over a connected socket. It complements the existing inetd-style `serve_stdio`. The server now runs on Windows as well, using positional I/O, binary-mode opens, and a statvfs fallback.
+- **quicksand-core:** New `QuicksandSMBTCPServer`, the default SMB server on Windows. It runs the pure-Python SMB3 server in-process on a loopback-only TCP listener, so mounts no longer require Administrator rights. The PowerShell `New-SmbShare` implementation (`WindowsSMBServer`) remains available by setting `QUICKSAND_WINDOWS_NATIVE_SMB=1`.
+- **quicksand-core:** `PlatformConfig.build_command` accepts a new `agent_socket_port` keyword. The virtio-serial agent channel can now run over a loopback TCP socket, which Windows hosts use instead of a Unix socket path.
+
+### Fixed
+- **quicksand-smb:** `FileFsSectorSizeInformation` responses are now the spec-correct 28 bytes instead of 20.
+- **quicksand-core:** CIFS mount options always include `nosharesock`. Without it, a mount/unmount/mount cycle wedged because the kernel CIFS client tried to resume a session the server had already closed.
+- **quicksand-image-tools:** The guest agent runs commands concurrently, so a timed-out command can no longer wedge the serial channel.
+- **quicksand-image-tools:** Image builds tolerate Windows-unstattable rootfs entries and temp-dir cleanup failures.
+
+### Released (no user-visible changes)
+- quick-sandbox v0.11.15, quicksand-agent v0.4.9, quicksand-alpine v0.9.10, quicksand-alpine-desktop v0.9.9, quicksand-base-scaffold v0.3.10, quicksand-cua v0.3.11, quicksand-overlay-scaffold v0.3.10, quicksand-ubuntu v0.9.11, quicksand-ubuntu-desktop v0.9.9. Dependency repins for quicksand-core 0.12 and quicksand-smb 0.5.
+
 ## [quicksand-core v0.11.14, quicksand-qemu v0.5.11] - 2026-06-22
 
 Stable release of the macOS VPN/split-DNS fix (previously alpha).

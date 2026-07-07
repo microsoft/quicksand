@@ -1,11 +1,11 @@
 [project]
 name = "quicksand-cua"
-version = "0.3.11.dev0"
+version = "0.3.12.dev0"
 description = "Overlay image package for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["quicksand-core>=0.11.13,<0.12.0", "quicksand-agent>=0.4.8,<0.5.0"]
+dependencies = ["quicksand-core>=0.12.0,<0.13.0", "quicksand-agent>=0.4.8,<0.5.0"]
 
 
 [project.entry-points."quicksand.images"]
@@ -13,7 +13,7 @@ quicksand-cua = "quicksand_cua:image"
 
 
 [build-system]
-requires = ["hatchling", "pip", "quicksand-image-tools>=0.5.13,<0.6.0", "quicksand-core>=0.11.13,<0.12.0", "quicksand-agent>=0.4.8,<0.5.0", "quicksand-ubuntu>=0.9.10,<0.10.0", "quicksand-qemu>=0.5.10,<0.6.0", "quicksand-smb>=0.4.9,<0.5.0"]
+requires = ["hatchling", "pip", "quicksand-image-tools>=0.5.13,<0.6.0", "quicksand-core>=0.12.0,<0.13.0", "quicksand-agent>=0.4.8,<0.5.0", "quicksand-ubuntu>=0.9.10,<0.10.0", "quicksand-qemu>=0.5.10,<0.6.0", "quicksand-smb>=0.5.0,<0.6.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

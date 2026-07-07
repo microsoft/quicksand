@@ -354,7 +354,8 @@ class _LifecycleMixin(_SandboxProtocol):
             return (True, "")
 
         # Try virtio-serial first (faster: no guest networking dependency).
-        # Fall back to HTTP if the socket path doesn't exist or connection fails.
+        # Fall back to HTTP if the socket endpoint (Unix path or loopback
+        # TCP port) can't be connected.
         if self._agent_socket_path is not None or self._agent_socket_port is not None:
             try:
                 from ..host.virtio_serial_agent_client import VirtioSerialAgentClient

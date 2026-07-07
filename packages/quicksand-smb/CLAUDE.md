@@ -4,14 +4,14 @@ Pure-Python SMB3 server for quicksand host-guest directory mounting.
 
 ## Overview
 
-An inetd-style SMB3 file server that reads/writes on stdin/stdout. QEMU's `guestfwd=cmd:` spawns one instance per guest TCP connection. No TCP port is opened on the host, eliminating the attack surface that Samba's smbd had.
+An SMB3 file server with two transports. On macOS and Linux it runs inetd-style, reading/writing on stdin/stdout — QEMU's `guestfwd=cmd:` spawns one instance per guest TCP connection, and no TCP port is opened on the host, eliminating the attack surface that Samba's smbd had. On Windows, `quicksand-core` serves it in-process via `serve_socket` on a persistent loopback-only (127.0.0.1) TCP listener, which avoids requiring Administrator rights.
 
 ## Acceptance Criteria
 
 - [x] `mount -t cifs //10.0.2.100/SHARE /mnt -o sec=none,vers=3.0` succeeds from Ubuntu guest
 - [x] `ls`, `cat`, `stat` work on mounted files (read path)
 - [x] `echo "data" > file`, `mkdir`, `rm`, `mv` work (write path)
-- [x] No TCP ports opened on host during operation
+- [x] No TCP ports opened on host during operation (macOS/Linux — Windows uses a loopback-only 127.0.0.1 listener)
 - [x] Path traversal attacks blocked (symlink escapes, `../` escapes)
 - [x] Dynamic mounts work (add shares after VM boot via config file reload)
 - [x] Read-only shares enforce read-only (writes fail with permission denied)
@@ -97,7 +97,7 @@ All SMB3 paths and filenames are UTF-16LE encoded. Length fields are in bytes, n
 Timestamps are 100-nanosecond intervals since January 1, 1601. Convert from Unix: `filetime = int((unix_time + 11644473600) * 10_000_000)`.
 
 ### Binary stdin/stdout
-QEMU's guestfwd passes raw TCP bytes via stdin/stdout. Must use `os.read()`/`os.write()` on raw file descriptors — NOT `sys.stdin.readline()` or print(). No buffering, no newline translation.
+QEMU's guestfwd passes raw TCP bytes via stdin/stdout. Must use `os.read()`/`os.write()` on raw file descriptors — NOT `sys.stdin.readline()` or print(). No buffering, no newline translation. The socket transport (`serve_socket`) instead uses `recv`/`sendall`, because `os.read()`/`os.write()` fail on socket file descriptors on Windows.
 
 ### Credit System
 SMB3 uses credits for flow control. Grant generously (256 per response) to avoid stalls.

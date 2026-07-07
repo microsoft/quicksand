@@ -2,7 +2,7 @@
 
 Pure-Python SMB3 server for [quicksand](https://github.com/microsoft/quicksand) host-guest directory mounts. Zero dependencies.
 
-Runs in inetd mode (stdin/stdout). QEMU spawns a new process per guest connection via `guestfwd`. No TCP port is opened on the host.
+Supports two transports. On macOS and Linux it runs in inetd mode (stdin/stdout) — QEMU spawns a new process per guest connection via `guestfwd`, and no TCP port is opened on the host. On Windows, `quicksand-core` serves it in-process via `serve_socket` on a loopback-only TCP listener, so no Administrator rights are required.
 
 ## Usage
 

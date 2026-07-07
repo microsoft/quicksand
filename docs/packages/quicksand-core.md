@@ -71,7 +71,7 @@ asyncio.run(main())
 - **Cross-platform**: Linux, macOS, Windows
 - **Platform abstraction**: Automatic detection of accelerators and machine types
 - **Save and load**: Save VM disk state to a directory and load it on any machine
-- **File sharing**: CIFS mounts via `quicksand-smb` (pure-Python SMB3 server, invoked as a subprocess via QEMU guestfwd)
+- **File sharing**: CIFS mounts via `quicksand-smb` (pure-Python SMB3 server — a subprocess via QEMU guestfwd on macOS/Linux, an in-process loopback TCP listener on Windows with no admin rights required)
 - **Performance optimizations**:
   - io_uring disk AIO (~50% lower latency on Linux)
   - IOThreads for better concurrent disk I/O (all platforms)

@@ -43,7 +43,7 @@ QEMU's SLIRP networking gives the guest a virtual NAT. The guest sees:
 - `10.0.2.2` — the host (NAT gateway)
 - `10.0.2.3` — DNS server
 
-`restrict=on` blocks all outbound connections from the guest to the real network. But it does **not** block `hostfwd` or `guestfwd`. Those are internal QEMU tunnels, not real network connections. This is how file mounts work even in `MOUNTS_ONLY` mode. The guestfwd tunnel to the SMB server is unaffected by `restrict=on`.
+`restrict=on` blocks all outbound connections from the guest to the real network. But it does **not** block `hostfwd` or `guestfwd`. Those are internal QEMU tunnels, not real network connections. This is how file mounts work even in `MOUNTS_ONLY` mode. The guestfwd tunnel to the SMB server is unaffected by `restrict=on` (on Windows the tunnel relays to the in-process loopback TCP listener rather than a stdin/stdout child).
 
 ## Port forwarding
 
