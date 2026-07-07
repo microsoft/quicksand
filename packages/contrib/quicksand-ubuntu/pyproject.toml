@@ -1,6 +1,6 @@
 [project]
 name = "quicksand-ubuntu"
-version = "0.9.11.dev0"
+version = "0.9.11"
 description = "Pre-built Ubuntu 24.04 VM image for quicksand"
 readme = "README.md"
 requires-python = ">=3.11"
