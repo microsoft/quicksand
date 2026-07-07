@@ -363,12 +363,12 @@ class TestCifsOpts:
     def test_cifs_opts_authenticated(self):
         """Test that cifs_opts produces NTLMSSP options when password is set."""
         result = MountOptions.cifs_opts("myuser", "mypass")
-        assert result == "username=myuser,password=mypass,sec=ntlmssp,vers=3.0"
+        assert result == "username=myuser,password=mypass,sec=ntlmssp,vers=3.0,nosharesock"
 
     def test_cifs_opts_anonymous(self):
         """Test that cifs_opts produces sec=none for empty password."""
         result = MountOptions.cifs_opts("guest", "")
-        assert result == "username=guest,password=,sec=none,vers=3.0"
+        assert result == "username=guest,password=,sec=none,vers=3.0,nosharesock"
 
 
 _PATHS_WITH_SPECIAL_CHARS = [

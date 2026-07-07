@@ -409,13 +409,21 @@ def _handle_fs_info(info_class: int, path: Path) -> bytes | None:
         )
 
     elif info_class == FS_SECTOR_SIZE_INFORMATION:
+        # FILE_FS_SECTOR_SIZE_INFORMATION is 7 UINT32s (28 bytes) per
+        # [MS-FSCC] 2.5.8. Emitting only five (20 bytes) makes the Linux CIFS
+        # client reject the reply ("buffer length 20 smaller than minimum size
+        # 28") and retry/stall — which intermittently wedged statfs (e.g. during
+        # umount). The last two fields are the sector/partition alignment byte
+        # offsets; 0 means aligned.
         return struct.pack(
-            "<IIIII",
+            "<IIIIIII",
             4096,  # LogicalBytesPerSector
             4096,  # PhysicalBytesPerSectorForAtomicity
             4096,  # PhysicalBytesPerSectorForPerformance
             4096,  # FileSystemEffectivePhysicalBytesPerSectorForAtomicity
             0,  # Flags
+            0,  # ByteOffsetForSectorAlignment
+            0,  # ByteOffsetForPartitionAlignment
         )
 
     return None

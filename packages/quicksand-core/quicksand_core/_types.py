@@ -459,9 +459,16 @@ class MountOptions:
         """Return CIFS mount options string.
 
         Uses sec=none for guest/anonymous access, sec=ntlmssp for authenticated.
+
+        ``nosharesock`` forces a dedicated TCP connection per mount instead of
+        reusing one keyed by server address. The pure-Python SMB server serves
+        one session per connection and closes it on unmount; without
+        ``nosharesock`` a subsequent mount to the same host tries to resume the
+        just-closed session and fails with ``mount error(115) Operation now in
+        progress`` (a mount/unmount/mount cycle then wedges).
         """
         sec = "none" if not password else "ntlmssp"
-        return f"username={username},password={password},sec={sec},vers=3.0"
+        return f"username={username},password={password},sec={sec},vers=3.0,nosharesock"
 
 
 # =============================================================================
