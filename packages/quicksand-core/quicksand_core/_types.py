@@ -237,6 +237,8 @@ class QuicksandGuestAgentMethod(StrEnum):
     EXECUTE_STREAM = "execute_stream"
     PING = "ping"
     AUTHENTICATE = "authenticate"
+    CREATE_USER = "create_user"
+    DELETE_USER = "delete_user"
 
 
 # =============================================================================
@@ -404,6 +406,7 @@ class ExecuteParams:
     shell: str
     cwd: str | None = None
     exclusive: bool = False
+    user: str | None = None
 
 
 @dataclass

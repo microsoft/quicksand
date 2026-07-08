@@ -23,6 +23,8 @@ tokio-stream = "0.1"
 # single open handle and a buffered `tokio::fs::File` seeks when reads and
 # writes interleave (ESPIPE on a non-seekable char device), so the transport
 # drives one non-blocking fd through `tokio::io::unix::AsyncFd` instead.
+# Also used for privilege drop (setuid/setgid/initgroups) and chown/kill in
+# multi-user mode.
 libc = "0.2"
 
 [profile.release]

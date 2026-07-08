@@ -42,9 +42,12 @@ class UbuntuImageBuildHook(BuildHookInterface):
         image_path = images_dir / f"ubuntu-{distro_version}-{arch}.qcow2"
         dockerfile_path = Path(self.root) / "quicksand_ubuntu" / "docker" / "Dockerfile"
 
-        if not image_path.exists():
-            self.app.display_info(f"Image not found: {image_path.name}, building...")
-            self._build_image(dockerfile_path, image_path)
+        # Always delegate to build_image: it reuses the cached qcow2 only when
+        # its sidecar hash matches the current Dockerfile + agent source, and
+        # rebuilds otherwise. Gating on mere existence here would package a
+        # stale image after an agent-only change.
+        self.app.display_info(f"Ensuring image is up to date: {image_path.name}")
+        self._build_image(dockerfile_path, image_path)
 
         self.app.display_info(f"Including image: {image_path}")
 
