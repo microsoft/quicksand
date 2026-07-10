@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .._types import FilePatterns, SaveManifest
+from .._types import NO_WINDOW_CREATIONFLAGS, FilePatterns, SaveManifest
 
 logger = logging.getLogger("quicksand.save")
 
@@ -129,6 +129,7 @@ class SaveWriter:
             ],
             capture_output=True,
             text=True,
+            creationflags=NO_WINDOW_CREATIONFLAGS,
         )
         if result.returncode != 0:
             raise RuntimeError(f"Failed to compress overlay: {result.stderr}")

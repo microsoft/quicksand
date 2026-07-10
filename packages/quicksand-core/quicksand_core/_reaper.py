@@ -68,7 +68,10 @@ def main() -> int:
         return 2
 
     cmd = sys.argv[2:]
-    child = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    # CREATE_NO_WINDOW: prevent QEMU (a console binary) from flashing its own
+    # console window when launched from a windowed/GUI parent on Windows.
+    _no_window = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    child = subprocess.Popen(cmd, stdin=subprocess.PIPE, creationflags=_no_window)
 
     def _forward(signum, _frame):
         if child.poll() is None:

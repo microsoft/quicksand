@@ -86,12 +86,16 @@ class VMProcessManager:
         # pipe and the reaper tears QEMU down. write_serial() still reaches
         # QEMU because the reaper forwards stdin bytes to QEMU's stdin.
         wrapped = [sys.executable, str(_REAPER_SCRIPT), "--", *command]
+        # CREATE_NO_WINDOW: when frozen, sys.executable is a Windows console app;
+        # without this it (and the QEMU it launches) flashes a console window.
+        _no_window = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         self._process = subprocess.Popen(
             wrapped,
             stdout=self._console_file,
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE,
             env=env,
+            creationflags=_no_window,
         )
 
         logger.debug(f"Started QEMU via reaper, reaper PID {self._process.pid}")

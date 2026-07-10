@@ -9,7 +9,7 @@ import httpx
 import pytest
 from quicksand_core import PortForward, Sandbox, SandboxConfig
 from quicksand_core._types import NetworkMode
-from quicksand_core.host import LinuxConfig
+from quicksand_core.host import Accelerator, LinuxConfig
 from quicksand_core.host.quicksand_guest_agent_client import _retry_on_transient_error
 from quicksand_core.qemu.arch import X86_64Config
 from quicksand_core.qemu.platform import PlatformConfig, RuntimeInfo
@@ -197,6 +197,48 @@ class TestSandboxMountConfig:
         # No -fsdev or virtio-9p args should be present
         assert "-fsdev" not in cmd
         assert "virtio-9p" not in str(cmd)
+
+
+class TestWhpxAccelerator:
+    """Regression: WHPX must always get kernel-irqchip=off.
+
+    WHPX's in-kernel irqchip + the guest's noapic boot param delivers device
+    interrupts unreliably (CIFS mounts hang). kernel-irqchip=off fixes it. This
+    was previously gated on nested_virt (baseboard == Microsoft), but bare-metal
+    Windows hosts need it too, so it must be applied for WHPX regardless.
+    """
+
+    def _build(self, fake_qcow2, *, nested_virt: bool):
+        from quicksand_core.host import WindowsConfig
+        from quicksand_core.qemu.arch import X86_64Config
+
+        platform_config = PlatformConfig(arch=X86_64Config(), os=WindowsConfig())
+        return platform_config.build_qemu_command(
+            config=SandboxConfig(image="ubuntu"),
+            runtime_info=RuntimeInfo(
+                qemu_binary=Path("/usr/bin/qemu-system-x86_64"),
+                qemu_img=Path("/usr/bin/qemu-img"),
+                runtime_dir=Path("/usr"),
+            ),
+            kernel_path=None,
+            initrd_path=None,
+            overlay_path=Path(str(fake_qcow2)),
+            agent_port=12345,
+            agent_token="test_token",
+            accelerator=Accelerator.WHPX,
+            nested_virt=nested_virt,
+        )
+
+    def test_whpx_kernel_irqchip_off_bare_metal(self, fake_qcow2):
+        cmd = self._build(fake_qcow2, nested_virt=False)
+        assert "-accel" in cmd
+        accel_val = cmd[cmd.index("-accel") + 1]
+        assert accel_val == "whpx,kernel-irqchip=off"
+
+    def test_whpx_kernel_irqchip_off_nested(self, fake_qcow2):
+        cmd = self._build(fake_qcow2, nested_virt=True)
+        accel_val = cmd[cmd.index("-accel") + 1]
+        assert accel_val == "whpx,kernel-irqchip=off"
 
 
 class TestSandboxContextManager:

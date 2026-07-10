@@ -7,6 +7,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from .._types import NO_WINDOW_CREATIONFLAGS
+
 logger = logging.getLogger("quicksand.overlay")
 
 
@@ -54,6 +56,7 @@ class OverlayManager:
                 ],
                 check=True,
                 capture_output=True,
+                creationflags=NO_WINDOW_CREATIONFLAGS,
             )
             if disk_size:
                 self.resize_overlay(overlay_path, disk_size)
@@ -73,6 +76,7 @@ class OverlayManager:
             ],
             check=True,
             capture_output=True,
+            creationflags=NO_WINDOW_CREATIONFLAGS,
         )
 
         if disk_size:
@@ -90,6 +94,7 @@ class OverlayManager:
             ],
             check=True,
             capture_output=True,
+            creationflags=NO_WINDOW_CREATIONFLAGS,
         )
 
     # ------------------------------------------------------------------
@@ -106,6 +111,7 @@ class OverlayManager:
             check=True,
             capture_output=True,
             text=True,
+            creationflags=NO_WINDOW_CREATIONFLAGS,
         )
         info = json.loads(result.stdout)
         return info.get("backing-filename")
@@ -179,4 +185,5 @@ class OverlayManager:
                 ],
                 check=True,
                 capture_output=True,
+                creationflags=NO_WINDOW_CREATIONFLAGS,
             )

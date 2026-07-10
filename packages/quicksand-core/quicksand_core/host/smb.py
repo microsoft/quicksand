@@ -183,10 +183,13 @@ class WindowsSMBServer(SMBServer):
         self._port_value = 445  # Windows native SMB always uses 445
 
     def _run_powershell(self, script: str) -> subprocess.CompletedProcess:
+        from .._types import NO_WINDOW_CREATIONFLAGS
+
         return subprocess.run(
             ["powershell", "-NoProfile", "-Command", script],
             capture_output=True,
             text=True,
+            creationflags=NO_WINDOW_CREATIONFLAGS,
         )
 
     @property

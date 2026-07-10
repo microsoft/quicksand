@@ -458,9 +458,19 @@ def _build_dir_entry(
     elif entry is not None:
         name = entry.name
         try:
-            st = entry.stat(follow_symlinks=False)
+            # os.DirEntry.stat() serves a cache tied to the originating
+            # os.scandir() iteration. On Windows that cached stat can raise
+            # OSError when the DirEntry is reused after the scan (as happens on a
+            # second QUERY_DIRECTORY of a reused/leased directory handle), which
+            # silently drops EVERY entry and yields an empty directory listing
+            # (first `ls` works, every subsequent `ls`/`find` returns nothing).
+            # Stat the full path directly so it always succeeds.
+            st = os.stat(entry.path, follow_symlinks=False)
         except OSError:
-            return None
+            try:
+                st = entry.stat(follow_symlinks=False)
+            except OSError:
+                return None
         is_dir = entry.is_dir(follow_symlinks=False)
     else:
         return None

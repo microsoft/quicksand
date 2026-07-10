@@ -952,3 +952,66 @@ class TestFsInfoSizes:
         out = _handle_fs_info(FS_SECTOR_SIZE_INFORMATION, tmp_path)
         assert out is not None
         assert len(out) == 28
+
+
+class TestBuildDirEntryStat:
+    """Regression: directory listings must survive a raising DirEntry.stat().
+
+    On Windows, os.DirEntry.stat() serves a cache tied to the originating
+    os.scandir() iteration and can raise OSError when the DirEntry is reused
+    for a second QUERY_DIRECTORY (reused/leased directory handle). Previously
+    _build_dir_entry swallowed that OSError and returned None, silently dropping
+    EVERY entry so the guest saw an empty directory (first `ls` works, every
+    subsequent `ls`/`find` returns nothing). The entry must instead be built by
+    stat'ing the full path.
+    """
+
+    def _fake_entry(self, path: Path, *, raise_direntry_stat: bool):
+        import os as _os
+
+        class _FakeDirEntry:
+            def __init__(self, p: Path):
+                self.name = p.name
+                self.path = str(p)
+                self._p = p
+
+            def stat(self, *, follow_symlinks: bool = False):
+                if raise_direntry_stat:
+                    raise OSError("simulated stale DirEntry.stat cache (WinError)")
+                return _os.stat(self._p, follow_symlinks=follow_symlinks)
+
+            def is_dir(self, *, follow_symlinks: bool = False):
+                return self._p.is_dir()
+
+        return _FakeDirEntry(path)
+
+    def test_entry_built_when_direntry_stat_raises(self, tmp_path):
+        from quicksand_smb._query import (
+            FILE_BOTH_DIRECTORY_INFORMATION,
+            _build_dir_entry,
+        )
+
+        f = tmp_path / "photo.png"
+        f.write_bytes(b"x" * 42)
+        entry = self._fake_entry(f, raise_direntry_stat=True)
+
+        out = _build_dir_entry(entry, FILE_BOTH_DIRECTORY_INFORMATION)
+
+        # Before the fix this returned None (dropping the entry). It must now
+        # build a valid entry by stat'ing entry.path directly.
+        assert out is not None
+        assert "photo.png".encode("utf-16-le") in out
+
+    def test_entry_still_built_when_direntry_stat_works(self, tmp_path):
+        from quicksand_smb._query import (
+            FILE_BOTH_DIRECTORY_INFORMATION,
+            _build_dir_entry,
+        )
+
+        f = tmp_path / "doc.txt"
+        f.write_text("hello")
+        entry = self._fake_entry(f, raise_direntry_stat=False)
+
+        out = _build_dir_entry(entry, FILE_BOTH_DIRECTORY_INFORMATION)
+        assert out is not None
+        assert "doc.txt".encode("utf-16-le") in out

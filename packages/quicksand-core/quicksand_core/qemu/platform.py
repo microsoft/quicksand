@@ -223,7 +223,14 @@ class PlatformConfig:
 
         if accelerator:
             accel_arg = accelerator.value
-            if accelerator == Accelerator.WHPX and nested_virt:
+            if accelerator == Accelerator.WHPX:
+                # kernel-irqchip=off routes interrupts through userspace. WHPX's
+                # in-kernel irqchip combined with the guest's noapic boot param
+                # (our IO-APIC workaround) delivers device interrupts unreliably:
+                # later `mount -t cifs` operations hang in the guest kernel until
+                # they time out. This was previously only applied when nested
+                # (baseboard == "Microsoft Corporation"), but bare-metal Windows
+                # hosts need it too, so apply it for WHPX unconditionally.
                 accel_arg = "whpx,kernel-irqchip=off"
             cmd.extend(["-accel", accel_arg])
 
