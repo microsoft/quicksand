@@ -21,12 +21,12 @@ from typing import Literal, Protocol, TypedDict, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from .host import Accelerator
+
 # Pass to subprocess.run()/Popen(creationflags=...) so console binaries (QEMU,
 # qemu-img, powershell) don't flash their own console window when launched from a
 # windowed/GUI parent on Windows. No-op (0) on non-Windows platforms.
 NO_WINDOW_CREATIONFLAGS: int = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-
-from .host import Accelerator
 
 # =============================================================================
 # Mount Specification
