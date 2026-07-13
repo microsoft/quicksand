@@ -4,6 +4,15 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [quicksand-core v0.12.1, quicksand-smb v0.5.1] - 2026-07-13
+
+Windows polish. Subprocesses no longer flash console windows, CIFS mounts no longer hang on bare-metal WHPX hosts, and repeated SMB directory listings no longer come back empty.
+
+### Fixed
+- **quicksand-core:** Every subprocess launched on Windows (QEMU via the reaper wrapper, qemu-img, and the PowerShell helpers) now passes `CREATE_NO_WINDOW`, so console windows no longer flash when Quicksand runs from a windowed or GUI parent. (#28)
+- **quicksand-core:** WHPX now always gets `kernel-irqchip=off` instead of only under nested virtualization. On bare-metal Windows hosts the in-kernel irqchip interacted badly with the guest's `noapic` boot parameter and delivered device interrupts unreliably, which made later CIFS mounts hang in the guest kernel until they timed out. (#28)
+- **quicksand-smb:** Directory listings on Windows no longer turn up empty after the first query of a reused directory handle. The server stats the full entry path directly instead of relying on the `os.DirEntry` stat cache, which can raise `OSError` once its originating scandir iteration has ended. (#28)
+
 ## [quicksand-core v0.12.0, quicksand-smb v0.5.0, quicksand-image-tools v0.5.14] - 2026-07-07
 
 Windows file sharing no longer needs Administrator rights, and SMB remount reliability is fixed on all platforms.

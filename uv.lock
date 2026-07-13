@@ -1082,7 +1082,7 @@ source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.12.1.dev0"
+version = "0.12.2.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "dnslib", marker = "sys_platform == 'darwin'" },
@@ -1166,7 +1166,7 @@ source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
 name = "quicksand-smb"
-version = "0.5.1.dev0"
+version = "0.5.2.dev0"
 source = { editable = "packages/quicksand-smb" }
 
 [[package]]
