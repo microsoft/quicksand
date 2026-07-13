@@ -60,7 +60,7 @@ Auto-detection selects the best available accelerator:
 
 With hardware acceleration (`-cpu host`), the guest runs on the real CPU. With TCG (`-cpu max`), QEMU translates every instruction in software.
 
-On Windows inside a Hyper-V VM (nested virtualization), WHPX gets an extra flag: `-accel whpx,kernel-irqchip=off`.
+On Windows, WHPX gets an extra flag: `-accel whpx,kernel-irqchip=off`. Routing interrupts through userspace keeps device interrupts reliable alongside the guest's `noapic` boot parameter.
 
 ## Device naming by machine type
 
