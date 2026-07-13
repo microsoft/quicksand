@@ -206,6 +206,17 @@ resource linuxShutdown 'Microsoft.DevTestLab/schedules@2018-09-15' = [
 
 // ---------- Windows runner ----------
 
+// Public IP provides outbound internet (default outbound access is retired
+// for new VMs); inbound stays blocked by the NSG
+resource winPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
+  name: 'pip-${windowsRunner.name}'
+  location: location
+  sku: { name: 'Standard' }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+
 resource winNic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
   name: 'nic-${windowsRunner.name}'
   location: location
@@ -216,6 +227,7 @@ resource winNic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
         properties: {
           subnet: { id: vnet.properties.subnets[0].id }
           privateIPAllocationMethod: 'Dynamic'
+          publicIPAddress: { id: winPip.id }
         }
       }
     ]
@@ -227,11 +239,18 @@ resource winVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   location: location
   properties: {
     hardwareProfile: { vmSize: windowsRunner.vmSize }
+    securityProfile: {
+      securityType: 'TrustedLaunch'
+      uefiSettings: {
+        secureBootEnabled: true
+        vTpmEnabled: true
+      }
+    }
     storageProfile: {
       imageReference: {
         publisher: 'MicrosoftWindowsServer'
         offer: 'WindowsServer'
-        sku: '2022-datacenter-g2'
+        sku: '2025-datacenter-azure-edition'
         version: 'latest'
       }
       osDisk: {
