@@ -286,6 +286,8 @@ class WindowsConfig(BaseOSConfig):
         """Detect Windows Hypervisor Platform."""
         try:
             # Check both WHPX availability and whether we're inside a hypervisor
+            from .._types import NO_WINDOW_CREATIONFLAGS
+
             result = subprocess.run(
                 [
                     "powershell",
@@ -296,6 +298,7 @@ class WindowsConfig(BaseOSConfig):
                 capture_output=True,
                 text=True,
                 timeout=10,
+                creationflags=NO_WINDOW_CREATIONFLAGS,
             )
             if result.returncode == 0 and "True" in result.stdout:
                 # Nested if baseboard is "Microsoft Corporation" (Azure/Hyper-V VM)
