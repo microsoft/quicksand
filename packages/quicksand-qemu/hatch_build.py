@@ -1192,4 +1192,4 @@ class RuntimeBuildHook(BuildHookInterface):
 
         # Mark as platform-specific wheel
         if version != "editable":
-            bundler.set_platform_wheel_tag(build_data)
+            bundler.set_platform_wheel_tag(build_data, bin_dir=bin_dir)

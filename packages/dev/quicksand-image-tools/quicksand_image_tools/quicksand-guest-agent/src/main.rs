@@ -16,13 +16,16 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
+    ffi::CString,
     fs,
     io::Write,
     net::SocketAddr,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    os::unix::process::CommandExt,
     process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -93,10 +96,30 @@ struct ExecuteRequest {
     /// When true, reject all other execute requests while this one is running.
     #[serde(default)]
     exclusive: bool,
+    /// Optional OS user to run the command as. When set, the command is
+    /// executed with that user's uid/gid/groups and HOME, defaulting cwd to
+    /// the user's home directory.
+    #[serde(default)]
+    user: Option<String>,
 }
 
 fn default_timeout() -> f64 {
     30.0
+}
+
+#[derive(Deserialize)]
+struct UserRequest {
+    name: String,
+    /// On delete, also remove the user's home directory.
+    #[serde(default)]
+    remove_home: bool,
+}
+
+#[derive(Serialize)]
+struct UserCreatedResponse {
+    uid: u32,
+    gid: u32,
+    home: String,
 }
 
 #[derive(Serialize)]
@@ -142,6 +165,231 @@ fn verify_token(headers: &axum::http::HeaderMap, expected: &str) -> Result<(), (
 }
 
 // ============================================================================
+// Multi-user support
+// ============================================================================
+//
+// Users are managed by editing the standard POSIX account files directly
+// (/etc/passwd, /etc/group, /etc/shadow). This keeps the behaviour identical
+// across every distro (Alpine, Ubuntu, ...) because those formats are
+// standardised and every minimal guest defaults to the `files` nsswitch
+// backend — no dependency on distro-specific `adduser`/`useradd` tools.
+
+/// uid/gid range for quicksand-managed users.
+const UID_MIN: u32 = 1000;
+const UID_MAX: u32 = 60000;
+
+/// Serializes account-file mutations so concurrent create/delete requests
+/// (the agent multiplexes requests) can't produce a torn /etc/passwd write.
+static USER_MGMT_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Clone)]
+struct PwEntry {
+    uid: u32,
+    gid: u32,
+    home: String,
+}
+
+/// Look up an existing user in /etc/passwd. Returns None if absent.
+fn lookup_user(name: &str) -> Option<PwEntry> {
+    let content = fs::read_to_string("/etc/passwd").ok()?;
+    for line in content.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() >= 7 && f[0] == name {
+            return Some(PwEntry {
+                uid: f[2].parse().ok()?,
+                gid: f[3].parse().ok()?,
+                home: f[5].to_string(),
+            });
+        }
+    }
+    None
+}
+
+/// Validate a username to prevent injection into the colon/newline-delimited
+/// account files. POSIX-portable subset: starts with [a-z_], then [a-z0-9_-].
+fn valid_username(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 32
+        && name.bytes().enumerate().all(|(i, b)| match b {
+            b'a'..=b'z' | b'_' => true,
+            b'0'..=b'9' | b'-' if i > 0 => true,
+            _ => false,
+        })
+}
+
+/// Highest id in [UID_MIN, UID_MAX) across passwd+group, plus one.
+fn next_free_id() -> u32 {
+    let mut max = UID_MIN - 1;
+    for (path, field) in [("/etc/passwd", 2usize), ("/etc/group", 2usize)] {
+        if let Ok(content) = fs::read_to_string(path) {
+            for line in content.lines() {
+                let f: Vec<&str> = line.split(':').collect();
+                if f.len() > field {
+                    if let Ok(id) = f[field].parse::<u32>() {
+                        if (UID_MIN..UID_MAX).contains(&id) && id > max {
+                            max = id;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    max + 1
+}
+
+fn append_line(path: &str, line: &str) -> std::io::Result<()> {
+    let mut f = fs::OpenOptions::new().append(true).create(true).open(path)?;
+    f.write_all(line.as_bytes())?;
+    f.write_all(b"\n")
+}
+
+fn remove_lines_for_user(path: &str, name: &str) -> std::io::Result<()> {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return Ok(()), // file may not exist (e.g. shadow); nothing to do
+    };
+    let prefix = format!("{}:", name);
+    let mut out: String = content
+        .lines()
+        .filter(|l| !l.starts_with(&prefix))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    fs::write(path, out)
+}
+
+/// SIGKILL every process owned by `uid` (each /proc/<pid> dir is owned by the
+/// process's real uid).
+fn kill_user_processes(uid: u32) {
+    if let Ok(entries) = fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let fname = entry.file_name();
+            let pid = match fname.to_string_lossy().parse::<i32>() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if let Ok(meta) = fs::metadata(format!("/proc/{}", pid)) {
+                if meta.uid() == uid {
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Create a new user account (distro-agnostic, native file manipulation).
+fn create_user(name: &str) -> Result<PwEntry, String> {
+    let _guard = USER_MGMT_LOCK.lock().unwrap();
+
+    if !valid_username(name) {
+        return Err(format!("Invalid username: {}", name));
+    }
+    if lookup_user(name).is_some() {
+        return Err(format!("User already exists: {}", name));
+    }
+
+    let id = next_free_id();
+    if id >= UID_MAX {
+        return Err("No free uid available".to_string());
+    }
+    let home = format!("/home/{}", name);
+
+    // group: name:x:gid:
+    append_line("/etc/group", &format!("{}:x:{}:", name, id))
+        .map_err(|e| format!("write /etc/group: {}", e))?;
+    // passwd: name:x:uid:gid:gecos:home:shell  (gecos empty; /bin/sh is universal)
+    append_line(
+        "/etc/passwd",
+        &format!("{}:x:{}:{}::{}:/bin/sh", name, id, id, home),
+    )
+    .map_err(|e| format!("write /etc/passwd: {}", e))?;
+    // shadow: locked password (`!`); we never password-auth, only setuid.
+    let _ = append_line("/etc/shadow", &format!("{}:!::0:99999:7:::", name));
+
+    fs::create_dir_all(&home).map_err(|e| format!("create {}: {}", home, e))?;
+    let c_home = CString::new(home.as_str()).map_err(|e| e.to_string())?;
+    unsafe {
+        if libc::chown(c_home.as_ptr(), id as _, id as _) != 0 {
+            return Err(format!("chown {}: {}", home, std::io::Error::last_os_error()));
+        }
+    }
+    fs::set_permissions(&home, fs::Permissions::from_mode(0o700))
+        .map_err(|e| format!("chmod {}: {}", home, e))?;
+
+    Ok(PwEntry { uid: id, gid: id, home })
+}
+
+/// Delete a user: kill its processes, strip account-file entries, optionally
+/// remove its home directory.
+fn delete_user(name: &str, remove_home: bool) -> Result<(), String> {
+    let _guard = USER_MGMT_LOCK.lock().unwrap();
+
+    if !valid_username(name) {
+        return Err(format!("Invalid username: {}", name));
+    }
+    let pw = lookup_user(name).ok_or_else(|| format!("No such user: {}", name))?;
+
+    kill_user_processes(pw.uid);
+
+    remove_lines_for_user("/etc/passwd", name).map_err(|e| format!("edit /etc/passwd: {}", e))?;
+    remove_lines_for_user("/etc/group", name).map_err(|e| format!("edit /etc/group: {}", e))?;
+    let _ = remove_lines_for_user("/etc/shadow", name);
+
+    if remove_home {
+        let _ = fs::remove_dir_all(&pw.home);
+    }
+    Ok(())
+}
+
+/// Resolve an optional username into a `PwEntry`, returning an error string if
+/// the user is requested but doesn't exist.
+fn resolve_user(user: &Option<String>) -> Result<Option<(String, PwEntry)>, String> {
+    match user {
+        None => Ok(None),
+        Some(u) => match lookup_user(u) {
+            Some(pw) => Ok(Some((u.clone(), pw))),
+            None => Err(format!("No such user: {}", u)),
+        },
+    }
+}
+
+/// Configure a Command (std or tokio) to run as `name`/`pw`: set HOME/USER and
+/// register a pre_exec hook that, in order, joins the user's supplementary
+/// groups then drops gid and uid. Everything happens while still root in the
+/// forked child, before exec — ordering is explicit so the privilege drop is
+/// correct regardless of std internals.
+macro_rules! configure_user {
+    ($cmd:expr, $pw:expr, $name:expr) => {{
+        let pw_ref: &PwEntry = $pw;
+        let nm: &str = $name;
+        let uid = pw_ref.uid;
+        let gid = pw_ref.gid;
+        let name_c = CString::new(nm).expect("validated username");
+        $cmd.env("HOME", &pw_ref.home).env("USER", nm).env("LOGNAME", nm);
+        unsafe {
+            $cmd.pre_exec(move || {
+                // `as _` adapts to the target's libc types (e.g. initgroups'
+                // basegroup is gid_t on Linux but c_int on macOS).
+                if libc::initgroups(name_c.as_ptr(), gid as _) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::setgid(gid as _) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::setuid(uid as _) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }};
+}
+
+// ============================================================================
 // Handlers
 // ============================================================================
 
@@ -164,6 +412,13 @@ async fn execute(
     if let Err(e) = verify_token(&headers, &state.token) {
         return e.into_response();
     }
+
+    // Resolve the target user (if any) before touching the exclusive lock so a
+    // bad username can't leave the lock claimed.
+    let user_pw = match resolve_user(&req.user) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    };
 
     // Reject if an exclusive command is already running.
     if state.exclusive_busy.load(Ordering::SeqCst) {
@@ -203,6 +458,11 @@ async fn execute(
 
         if let Some(cwd) = &req.cwd {
             cmd.current_dir(cwd);
+        } else if let Some((_, pw)) = &user_pw {
+            cmd.current_dir(&pw.home);
+        }
+        if let Some((name, pw)) = &user_pw {
+            configure_user!(cmd, pw, name.as_str());
         }
 
         cmd.output()
@@ -243,6 +503,12 @@ async fn execute_stream(
     if let Err(e) = verify_token(&headers, &state.token) {
         return e.into_response();
     }
+
+    // Resolve the target user (if any) before touching the exclusive lock.
+    let user_pw = match resolve_user(&req.user) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    };
 
     // Reject if an exclusive command is already running.
     if state.exclusive_busy.load(Ordering::SeqCst) {
@@ -286,6 +552,11 @@ async fn execute_stream(
 
             if let Some(cwd) = &req.cwd {
                 cmd.current_dir(cwd);
+            } else if let Some((_, pw)) = &user_pw {
+                cmd.current_dir(&pw.home);
+            }
+            if let Some((name, pw)) = &user_pw {
+                configure_user!(cmd, pw, name.as_str());
             }
 
             let mut child = match cmd.spawn() {
@@ -379,6 +650,42 @@ async fn ping(
         .into_response()
 }
 
+async fn create_user_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<UserRequest>,
+) -> impl IntoResponse {
+    if let Err(e) = verify_token(&headers, &state.token) {
+        return e.into_response();
+    }
+    match create_user(&req.name) {
+        Ok(pw) => (
+            StatusCode::OK,
+            Json(UserCreatedResponse {
+                uid: pw.uid,
+                gid: pw.gid,
+                home: pw.home,
+            }),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    }
+}
+
+async fn delete_user_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<UserRequest>,
+) -> impl IntoResponse {
+    if let Err(e) = verify_token(&headers, &state.token) {
+        return e.into_response();
+    }
+    match delete_user(&req.name, req.remove_home) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"removed": true}))).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    }
+}
+
 // ============================================================================
 // Shared command execution (used by both HTTP and virtio-serial transports)
 // ============================================================================
@@ -389,7 +696,23 @@ struct ExecResult {
     exit_code: i32,
 }
 
-async fn run_command(command: &str, timeout_secs: f64, cwd: Option<&str>) -> ExecResult {
+async fn run_command(
+    command: &str,
+    timeout_secs: f64,
+    cwd: Option<&str>,
+    user: Option<&str>,
+) -> ExecResult {
+    let user_pw = match resolve_user(&user.map(|s| s.to_string())) {
+        Ok(v) => v,
+        Err(e) => {
+            return ExecResult {
+                stdout: String::new(),
+                stderr: e,
+                exit_code: -1,
+            }
+        }
+    };
+
     let timeout_duration = Duration::from_secs_f64(timeout_secs);
 
     let result = timeout(timeout_duration, async {
@@ -399,6 +722,11 @@ async fn run_command(command: &str, timeout_secs: f64, cwd: Option<&str>) -> Exe
         cmd.stderr(Stdio::piped());
         if let Some(dir) = cwd {
             cmd.current_dir(dir);
+        } else if let Some((_, pw)) = &user_pw {
+            cmd.current_dir(&pw.home);
+        }
+        if let Some((name, pw)) = &user_pw {
+            configure_user!(cmd, pw, name.as_str());
         }
         cmd.output()
     })
@@ -614,6 +942,7 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let timeout_secs = params.get("timeout").and_then(|v| v.as_f64()).unwrap_or(30.0);
                 let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let user = params.get("user").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let is_exclusive = params.get("exclusive").and_then(|v| v.as_bool()).unwrap_or(false);
 
                 if exclusive_busy.load(Ordering::SeqCst) {
@@ -632,7 +961,8 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 let tx = tx.clone();
                 let exclusive_busy = Arc::clone(&exclusive_busy);
                 tokio::spawn(async move {
-                    let result = run_command(&command, timeout_secs, cwd.as_deref()).await;
+                    let result =
+                        run_command(&command, timeout_secs, cwd.as_deref(), user.as_deref()).await;
 
                     if is_exclusive {
                         exclusive_busy.store(false, Ordering::SeqCst);
@@ -652,7 +982,18 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let timeout_secs = params.get("timeout").and_then(|v| v.as_f64()).unwrap_or(30.0);
                 let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let user = params.get("user").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let is_exclusive = params.get("exclusive").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                // Resolve the target user before claiming the exclusive lock.
+                let user_pw = match resolve_user(&user) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        send_frame(&tx, serde_json::json!({"id": id, "stream": "stderr", "data": format!("{}\n", e)}));
+                        send_frame(&tx, serde_json::json!({"id": id, "stream": "exit", "exit_code": -1}));
+                        continue;
+                    }
+                };
 
                 if exclusive_busy.load(Ordering::SeqCst) {
                     send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}}));
@@ -679,6 +1020,11 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                         cmd.stderr(Stdio::piped());
                         if let Some(dir) = &cwd {
                             cmd.current_dir(dir);
+                        } else if let Some((_, pw)) = &user_pw {
+                            cmd.current_dir(&pw.home);
+                        }
+                        if let Some((name, pw)) = &user_pw {
+                            configure_user!(cmd, pw, name.as_str());
                         }
 
                         let mut child = match cmd.spawn() {
@@ -737,6 +1083,23 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                         exclusive_busy.store(false, Ordering::SeqCst);
                     }
                 });
+            }
+            "create_user" if authenticated => {
+                let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let resp = match create_user(name) {
+                    Ok(pw) => serde_json::json!({"id": id, "result": {"uid": pw.uid, "gid": pw.gid, "home": pw.home}}),
+                    Err(e) => serde_json::json!({"id": id, "error": {"message": e}}),
+                };
+                send_frame(&tx, resp);
+            }
+            "delete_user" if authenticated => {
+                let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let remove_home = params.get("remove_home").and_then(|v| v.as_bool()).unwrap_or(false);
+                let resp = match delete_user(name, remove_home) {
+                    Ok(()) => serde_json::json!({"id": id, "result": {"removed": true}}),
+                    Err(e) => serde_json::json!({"id": id, "error": {"message": e}}),
+                };
+                send_frame(&tx, resp);
             }
             _ if !authenticated => {
                 send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Not authenticated"}}));
@@ -808,6 +1171,8 @@ async fn main() {
         .route("/authenticate", post(authenticate))
         .route("/execute", post(execute))
         .route("/execute_stream", post(execute_stream))
+        .route("/create_user", post(create_user_handler))
+        .route("/delete_user", post(delete_user_handler))
         .route("/ping", get(ping))
         .with_state(state);
 

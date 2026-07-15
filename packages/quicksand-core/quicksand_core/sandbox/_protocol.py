@@ -77,6 +77,7 @@ class _SandboxProtocol(Protocol):
         on_stdout: Callable[[str], None] | None = None,
         on_stderr: Callable[[str], None] | None = None,
         exclusive: bool = False,
+        user: str | None = None,
     ) -> ExecuteResult: ...
 
     async def save(
