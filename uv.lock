@@ -1026,7 +1026,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-alpine"
-version = "0.9.11.dev0"
+version = "0.9.11"
 source = { editable = "packages/contrib/quicksand-alpine" }
 dependencies = [
     { name = "quicksand-core" },
