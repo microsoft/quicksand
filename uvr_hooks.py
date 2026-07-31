@@ -38,7 +38,15 @@ _SKIP = {"quicksand_qemu"}
 
 
 def _retag_wheels(dist: Path) -> None:
-    """Copy each image wheel into variants for every supported host platform."""
+    """Rebuild each image wheel under every supported host platform tag.
+
+    Uses ``wheel tags`` rather than copying the file byte-for-byte. PyPI
+    rejects any upload whose content digest matches an already-published
+    file, so identical copies under different filenames can never all be
+    published — rewriting the WHEEL tag gives each variant a unique digest.
+    """
+    import sys
+
     for whl in sorted(dist.glob("*.whl")):
         m = _WHEEL_RE.match(whl.name)
         if not m:
@@ -51,11 +59,26 @@ def _retag_wheels(dist: Path) -> None:
             continue
 
         for target in _ARCH_TARGETS[arch_m.group()]:
+            if target == parts["platform"]:
+                continue
             new_name = f"{parts['name']}-{parts['version']}-py3-none-{target}.whl"
             dest = dist / new_name
-            if dest.resolve() != whl.resolve() and not dest.exists():
-                shutil.copy2(whl, dest)
-                print(f"  {whl.name} -> {new_name}")
+            if dest.exists():
+                continue
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "wheel",
+                    "tags",
+                    "--platform-tag",
+                    target,
+                    str(whl),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            print(f"  {whl.name} -> {new_name}")
 
 
 # Runner used to build pure (py3-none-any) wheels for PyPI.
