@@ -7,6 +7,7 @@ Reference: [MS-SMB2] Sections 2.2.37-2.2.42 and [MS-FSCC].
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import struct
@@ -823,14 +824,38 @@ def _handle_set_file_info(
         if new_path is None:
             return STATUS_ACCESS_DENIED
 
+        old_path = info.path
+        reopen_path = None
         try:
             if new_path.exists() and not replace_if_exists:
                 from ._status import STATUS_OBJECT_NAME_COLLISION
 
                 return STATUS_OBJECT_NAME_COLLISION
-            os.rename(str(info.path), str(new_path))
+
+            if info.fd >= 0:
+                os.close(info.fd)
+                info.fd = -1
+
+            os.rename(str(old_path), str(new_path))
             info.path = new_path
+
+            if not info.is_dir:
+                flags = os.O_RDONLY if info.readonly else os.O_RDWR
+                reopen_path = str(new_path)
+                info.fd = os.open(reopen_path, flags | getattr(os, "_O_BINARY", 0))
         except OSError:
+            if reopen_path:
+                with contextlib.suppress(OSError):
+                    os.close(info.fd)
+                info.fd = -1
+            if info.fd == -1 and not info.is_dir and old_path.exists():
+                try:
+                    info.fd = os.open(
+                        str(old_path),
+                        (os.O_RDONLY if info.readonly else os.O_RDWR) | getattr(os, "_O_BINARY", 0),
+                    )
+                except OSError:
+                    info.fd = -1
             return STATUS_ACCESS_DENIED
         return STATUS_SUCCESS
 
