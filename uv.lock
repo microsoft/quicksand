@@ -1167,7 +1167,7 @@ source = { editable = "packages/quicksand-qemu" }
 
 [[package]]
 name = "quicksand-smb"
-version = "0.5.2.dev0"
+version = "0.5.3"
 source = { editable = "packages/quicksand-smb" }
 
 [[package]]
