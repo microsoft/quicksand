@@ -7,6 +7,7 @@ Reference: [MS-SMB2] Sections 2.2.37-2.2.42 and [MS-FSCC].
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import struct
@@ -19,6 +20,7 @@ from ._files import (
     HandleManager,
     _filetime,
     _filetime_now,
+    _resolve_path,
 )
 from ._protocol import SMBRequest, build_error_response, build_response_header
 from ._status import (
@@ -700,6 +702,8 @@ def handle_query_directory(
 def handle_set_info(
     req: SMBRequest,
     handles: HandleManager,
+    shares: dict[str, dict],
+    tree_map: dict[int, str],
 ) -> bytes:
     """Handle SET_INFO request."""
     payload = req.payload
@@ -718,6 +722,11 @@ def handle_set_info(
     if info is None:
         return build_error_response(req.header, STATUS_INVALID_HANDLE)
 
+    share_name = tree_map.get(info.tree_id)
+    share_root = (
+        Path(shares[share_name]["host_path"]) if share_name and share_name in shares else None
+    )
+
     # Extract the input buffer
     buf_start = buffer_offset - 64
     if buf_start < 0:
@@ -725,7 +734,7 @@ def handle_set_info(
     buffer_data = payload[buf_start : buf_start + buffer_length]
 
     if info_type == SMB2_0_INFO_FILE:
-        result = _handle_set_file_info(file_info_class, buffer_data, info)
+        result = _handle_set_file_info(file_info_class, buffer_data, info, share_root)
     else:
         result = STATUS_NOT_SUPPORTED
 
@@ -742,6 +751,7 @@ def _handle_set_file_info(
     info_class: int,
     data: bytes,
     info: HandleInfo,
+    share_root: Path | None,
 ) -> int:
     """Apply SET_INFO for file info classes. Returns NTSTATUS."""
     if info.readonly:
@@ -796,21 +806,56 @@ def _handle_set_file_info(
         if len(data) < 20:
             return STATUS_INVALID_PARAMETER
         replace_if_exists = struct.unpack_from("<B", data)[0]
+        root_directory = struct.unpack_from("<Q", data, 8)[0]
         name_length = struct.unpack_from("<I", data, 16)[0]
+        if root_directory != 0 or name_length == 0 or name_length % 2:
+            return STATUS_INVALID_PARAMETER
+        if name_length > len(data) - 20:
+            return STATUS_INVALID_PARAMETER
         name_bytes = data[20 : 20 + name_length]
-        new_name = name_bytes.decode("utf-16-le", errors="replace")
-        # The name might be a full path like \newname or just newname
-        new_name = new_name.lstrip("\\").replace("\\", "/")
-        new_path = info.path.parent / new_name
+        try:
+            new_name = name_bytes.decode("utf-16-le")
+        except UnicodeDecodeError:
+            return STATUS_INVALID_PARAMETER
+        if share_root is None:
+            return STATUS_ACCESS_DENIED
 
+        new_path = _resolve_path(share_root, new_name)
+        if new_path is None:
+            return STATUS_ACCESS_DENIED
+
+        old_path = info.path
+        reopen_path = None
         try:
             if new_path.exists() and not replace_if_exists:
                 from ._status import STATUS_OBJECT_NAME_COLLISION
 
                 return STATUS_OBJECT_NAME_COLLISION
-            os.rename(str(info.path), str(new_path))
+
+            if info.fd >= 0:
+                os.close(info.fd)
+                info.fd = -1
+
+            os.rename(str(old_path), str(new_path))
             info.path = new_path
+
+            if not info.is_dir:
+                flags = os.O_RDONLY if info.readonly else os.O_RDWR
+                reopen_path = str(new_path)
+                info.fd = os.open(reopen_path, flags | getattr(os, "_O_BINARY", 0))
         except OSError:
+            if reopen_path:
+                with contextlib.suppress(OSError):
+                    os.close(info.fd)
+                info.fd = -1
+            if info.fd == -1 and not info.is_dir and old_path.exists():
+                try:
+                    info.fd = os.open(
+                        str(old_path),
+                        (os.O_RDONLY if info.readonly else os.O_RDWR) | getattr(os, "_O_BINARY", 0),
+                    )
+                except OSError:
+                    info.fd = -1
             return STATUS_ACCESS_DENIED
         return STATUS_SUCCESS
 

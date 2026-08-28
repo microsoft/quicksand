@@ -203,7 +203,7 @@ def _dispatch(session: SMBSession, req: SMBRequest) -> bytes:
         return handle_query_info(req, session.handles, session.shares_dict, session.tree_map)
 
     elif cmd == Command.SET_INFO:
-        return handle_set_info(req, session.handles)
+        return handle_set_info(req, session.handles, session.shares_dict, session.tree_map)
 
     elif cmd == Command.QUERY_DIRECTORY:
         return handle_query_directory(req, session.handles, session.shares_dict, session.tree_map)

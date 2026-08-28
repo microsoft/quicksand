@@ -38,6 +38,7 @@ from quicksand_smb._status import (
     STATUS_BAD_NETWORK_NAME,
     STATUS_END_OF_FILE,
     STATUS_INVALID_HANDLE,
+    STATUS_INVALID_PARAMETER,
     STATUS_NO_MORE_FILES,
     STATUS_OBJECT_NAME_COLLISION,
     STATUS_OBJECT_NAME_NOT_FOUND,
@@ -471,6 +472,65 @@ class TestPathTraversal:
         response = _dispatch(session, req)
         return _get_status(response)
 
+    def _open_file(self, session: SMBSession, filename: str) -> bytes:
+        name_bytes = filename.encode("utf-16-le")
+        body = struct.pack(
+            "<HBBIqQIIIIIHHII",
+            57,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0x12019F,
+            0x80,
+            0x07,
+            0x01,
+            0,
+            64 + 56,
+            len(name_bytes),
+            0,
+            0,
+        )
+        body += name_bytes
+        header = _smb_header(Command.CREATE, tree_id=1, session_id=1)
+        response = _dispatch(session, parse_request(header + body))
+        assert _get_status(response) == STATUS_SUCCESS
+        return response[64 + 64 : 64 + 80]
+
+    def _try_rename(
+        self,
+        session: SMBSession,
+        file_id: bytes,
+        new_name: str,
+        *,
+        replace_if_exists: bool = False,
+        root_directory: int = 0,
+    ) -> int:
+        name_bytes = new_name.encode("utf-16-le")
+        rename_info = struct.pack(
+            "<B7xQI",
+            replace_if_exists,
+            root_directory,
+            len(name_bytes),
+        )
+        rename_info += name_bytes
+        body = struct.pack(
+            "<HBBIHHI16s",
+            33,
+            0x01,
+            10,
+            len(rename_info),
+            64 + 32,
+            0,
+            0,
+            file_id,
+        )
+        body += rename_info
+        header = _smb_header(Command.SET_INFO, tree_id=1, session_id=1)
+        response = _dispatch(session, parse_request(header + body))
+        return _get_status(response)
+
     def test_dotdot_escape(self, tmp_path):
         share_dir = tmp_path / "share"
         share_dir.mkdir()
@@ -505,6 +565,106 @@ class TestPathTraversal:
         session = self._setup_session(share_dir)
         status = self._try_create(session, "escape")
         assert status == STATUS_ACCESS_DENIED
+
+    def test_rename_dotdot_escape(self, tmp_path):
+        share_dir = tmp_path / "share"
+        share_dir.mkdir()
+        source = share_dir / "source.txt"
+        source.write_text("payload")
+        outside = tmp_path / "outside.txt"
+        outside.write_text("original")
+
+        session = self._setup_session(share_dir)
+        file_id = self._open_file(session, "source.txt")
+        status = self._try_rename(
+            session,
+            file_id,
+            "..\\outside.txt",
+            replace_if_exists=True,
+        )
+
+        assert status == STATUS_ACCESS_DENIED
+        assert source.read_text() == "payload"
+        assert outside.read_text() == "original"
+
+    def test_rename_absolute_escape(self, tmp_path):
+        share_dir = tmp_path / "share"
+        share_dir.mkdir()
+        source = share_dir / "source.txt"
+        source.write_text("payload")
+        outside = tmp_path / "outside.txt"
+        outside.write_text("original")
+
+        session = self._setup_session(share_dir)
+        file_id = self._open_file(session, "source.txt")
+        status = self._try_rename(
+            session,
+            file_id,
+            str(outside),
+            replace_if_exists=True,
+        )
+
+        assert status == STATUS_ACCESS_DENIED
+        assert source.read_text() == "payload"
+        assert outside.read_text() == "original"
+
+    def test_rename_symlink_escape(self, tmp_path):
+        share_dir = tmp_path / "share"
+        share_dir.mkdir()
+        source = share_dir / "source.txt"
+        source.write_text("payload")
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        link = share_dir / "escape"
+        try:
+            link.symlink_to(outside_dir, target_is_directory=True)
+        except (OSError, NotImplementedError) as e:
+            pytest.skip(f"cannot create symlink on this platform: {e}")
+
+        session = self._setup_session(share_dir)
+        file_id = self._open_file(session, "source.txt")
+        status = self._try_rename(session, file_id, "escape\\payload.txt")
+
+        assert status == STATUS_ACCESS_DENIED
+        assert source.read_text() == "payload"
+        assert not (outside_dir / "payload.txt").exists()
+
+    def test_rename_full_share_relative_path(self, tmp_path):
+        share_dir = tmp_path / "share"
+        subdir = share_dir / "subdir"
+        subdir.mkdir(parents=True)
+        source = subdir / "source.txt"
+        source.write_text("payload")
+
+        session = self._setup_session(share_dir)
+        file_id = self._open_file(session, "subdir\\source.txt")
+        status = self._try_rename(session, file_id, "subdir\\renamed.txt")
+
+        renamed = subdir / "renamed.txt"
+        assert status == STATUS_SUCCESS
+        assert not source.exists()
+        assert renamed.read_text() == "payload"
+        info = session.handles.get(file_id)
+        assert info is not None
+        assert info.path == renamed.resolve()
+
+    def test_rename_rejects_root_directory_handle(self, tmp_path):
+        share_dir = tmp_path / "share"
+        share_dir.mkdir()
+        source = share_dir / "source.txt"
+        source.write_text("payload")
+
+        session = self._setup_session(share_dir)
+        file_id = self._open_file(session, "source.txt")
+        status = self._try_rename(
+            session,
+            file_id,
+            "renamed.txt",
+            root_directory=1,
+        )
+
+        assert status == STATUS_INVALID_PARAMETER
+        assert source.read_text() == "payload"
 
 
 class TestDirectoryOperations:
