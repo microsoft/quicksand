@@ -43,6 +43,7 @@ jobs:
         uv venv --seed --clear
         source .venv/bin/activate
         uv sync
+        git restore uv.lock
         uvr jobs validate
 
   # --------------------------------------------------------------------------
@@ -66,6 +67,7 @@ jobs:
         uv venv --seed --clear
         source .venv/bin/activate
         uv sync
+        git restore uv.lock
         poe ${{ matrix.task }}
 
   # --------------------------------------------------------------------------
@@ -101,6 +103,7 @@ jobs:
       run: |
         uv venv --seed --clear
         uv sync
+        git restore uv.lock
         uv run --no-sync uvr jobs build
     - id: upload
       uses: actions/upload-artifact@v4
@@ -211,6 +214,7 @@ jobs:
         uv venv --seed --clear
         source .venv/bin/activate
         uv sync
+        git restore uv.lock
         uvr jobs release
 
   # --------------------------------------------------------------------------
@@ -245,6 +249,7 @@ jobs:
         uv venv --seed --clear
         source .venv/bin/activate
         uv sync
+        git restore uv.lock
         uvr jobs publish
 
   # --------------------------------------------------------------------------
@@ -277,4 +282,5 @@ jobs:
         uv venv --seed --clear
         source .venv/bin/activate
         uv sync
+        git restore uv.lock
         uvr jobs bump
