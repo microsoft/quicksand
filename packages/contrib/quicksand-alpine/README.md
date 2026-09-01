@@ -64,10 +64,10 @@ async with Sandbox(image="alpine", memory="512M", cpus=2) as sb:
 ## What's Included
 
 The Alpine 3.23 image includes:
-- Python 3
-- Bash shell
+- BusyBox shell
 - curl, ca-certificates
-- Networking tools (iproute2, iputils-ping)
+- OpenRC and dhcpcd
+- sudo and ext4 disk-resize tools
 - The quicksand agent (pre-installed)
 
 ## Installing Additional Packages
