@@ -10,6 +10,10 @@ permissions:
   contents: write
   actions: read
   id-token: write
+env:
+  PIP_INDEX_URL: https://packagefeedproxy.microsoft.io/pypi/simple/
+  UV_DEFAULT_INDEX: https://packagefeedproxy.microsoft.io/pypi/simple/
+  UV_INDEX_URL: https://packagefeedproxy.microsoft.io/pypi/simple/
 concurrency:
   group: release
   cancel-in-progress: false
@@ -38,7 +42,8 @@ jobs:
       run: |
         uv venv --seed --clear
         source .venv/bin/activate
-        uv sync --frozen
+        uv sync
+        git restore uv.lock
         uvr jobs validate
 
   # --------------------------------------------------------------------------
@@ -61,7 +66,8 @@ jobs:
     - run: |
         uv venv --seed --clear
         source .venv/bin/activate
-        uv sync --frozen
+        uv sync
+        git restore uv.lock
         poe ${{ matrix.task }}
 
   # --------------------------------------------------------------------------
@@ -96,7 +102,8 @@ jobs:
         QUICKSAND_AUTO_INSTALL: "1"
       run: |
         uv venv --seed --clear
-        uv sync --frozen
+        uv sync
+        git restore uv.lock
         uv run --no-sync uvr jobs build
     - id: upload
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -206,7 +213,8 @@ jobs:
       run: |
         uv venv --seed --clear
         source .venv/bin/activate
-        uv sync --frozen
+        uv sync
+        git restore uv.lock
         uvr jobs release
 
   # --------------------------------------------------------------------------
@@ -240,7 +248,8 @@ jobs:
       run: |
         uv venv --seed --clear
         source .venv/bin/activate
-        uv sync --frozen
+        uv sync
+        git restore uv.lock
         uvr jobs publish
 
   # --------------------------------------------------------------------------
@@ -272,5 +281,6 @@ jobs:
       run: |
         uv venv --seed --clear
         source .venv/bin/activate
-        uv sync --frozen
+        uv sync
+        git restore uv.lock
         uvr jobs bump
