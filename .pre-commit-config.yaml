@@ -1,16 +1,23 @@
 repos:
   - repo: local
     hooks:
+      - id: sync
+        name: sync
+        entry: uv sync
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: fix
         name: fix
-        entry: uv run poe fix
+        entry: uv run --no-sync poe -e virtualenv fix
         language: system
         pass_filenames: false
         always_run: true
 
       - id: check
         name: check
-        entry: uv run poe check
+        entry: uv run --no-sync poe -e virtualenv check
         language: system
         pass_filenames: false
         always_run: true
@@ -20,4 +27,5 @@ repos:
         entry: cp README.md packages/quicksand/README.md
         language: system
         files: ^README\.md$
+        pass_filenames: false
         always_run: true
