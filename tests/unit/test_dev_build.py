@@ -157,10 +157,15 @@ class TestBuildImage:
         dockerfile_path = tmp_dir / "Dockerfile"
         dockerfile_path.write_text("FROM alpine:3.20\n")
 
-        # Create cached image
+        # Create cached image. The cache key covers the Dockerfile plus the
+        # agent source the build copies into the context.
         import hashlib
 
-        content_hash = hashlib.sha256(b"FROM alpine:3.20\n").hexdigest()[:16]
+        from quicksand_image_tools.build import _agent_source_hash
+
+        content_hash = hashlib.sha256(
+            b"FROM alpine:3.20\n" + _agent_source_hash().encode()
+        ).hexdigest()[:16]
         cached_image = cache_dir / f"custom-{content_hash}.qcow2"
         cached_image.touch()
 

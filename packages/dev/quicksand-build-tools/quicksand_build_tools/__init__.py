@@ -322,11 +322,19 @@ class BinaryBundler:
                 "would break on hosts without it on PATH."
             )
 
-    def set_platform_wheel_tag(self, build_data: dict) -> None:
+    def set_platform_wheel_tag(self, build_data: dict, bin_dir: Path | None = None) -> None:
         """Set build_data fields for a platform-specific py3-none wheel.
 
         On Windows ARM64, overrides the tag from ``win_amd64`` to ``win_arm64``
         when native hardware is ARM64 (Python may report amd64 under emulation).
+
+        On Linux, the manylinux level is derived from the actual glibc symbol
+        versions the bundled binaries require (via :func:`_linux_manylinux_tag`)
+        rather than hardcoded. The binaries link against the build runner's
+        glibc, so the tag must reflect their real floor. A hardcoded
+        ``manylinux_2_17`` lets pip install wheels that then fail to load on
+        hosts with an older glibc than the runner. ``bin_dir`` (the directory
+        holding the bundled binaries) is required for Linux wheels.
         """
         build_data["pure_python"] = False
         platform_tag = sysconfig.get_platform().replace("-", "_").replace(".", "_")
@@ -349,11 +357,77 @@ class BinaryBundler:
             except Exception:
                 pass
 
-        # PyPI requires manylinux tags for Linux wheels (PEP 600)
         if platform_tag.startswith("linux_"):
-            platform_tag = platform_tag.replace("linux_", "manylinux_2_17_", 1)
+            if bin_dir is None:
+                raise RuntimeError(
+                    "set_platform_wheel_tag requires bin_dir for Linux wheels to "
+                    "derive the manylinux tag from the bundled binaries' glibc "
+                    "requirement."
+                )
+            platform_tag = self._linux_manylinux_tag(bin_dir, platform_tag)
 
         build_data["tag"] = f"py3-none-{platform_tag}"
+
+    def _linux_manylinux_tag(self, bin_dir: Path, platform_tag: str) -> str:
+        """Derive the manylinux platform tag from the bundled ELF binaries.
+
+        Scans every ELF file under ``bin_dir`` for the glibc symbol versions it
+        references and asks auditwheel which manylinux policy that implies. The
+        result (e.g. ``manylinux_2_38_aarch64``) is the lowest manylinux level
+        the binaries can actually run on. auditwheel is a hard build dependency
+        on Linux; if it or the analysis fails we raise rather than guess, since
+        a wrong tag produces wheels that crash on load instead of being
+        rejected at install time.
+        """
+        from collections import defaultdict
+
+        # Linux-only build deps, absent from the dev venv on other platforms.
+        from auditwheel.architecture import Architecture  # ty: ignore[unresolved-import]
+        from auditwheel.elfutils import elf_find_versioned_symbols  # ty: ignore[unresolved-import]
+        from auditwheel.libc import Libc  # ty: ignore[unresolved-import]
+        from auditwheel.policy import WheelPolicies  # ty: ignore[unresolved-import]
+        from elftools.common.exceptions import ELFError  # ty: ignore[unresolved-import]
+        from elftools.elf.elffile import ELFFile  # ty: ignore[unresolved-import]
+
+        arch_name = platform_tag[len("linux_") :]
+        try:
+            arch = Architecture(arch_name)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Unknown architecture {arch_name!r} for manylinux tagging."
+            ) from exc
+
+        versioned_symbols: dict[str, set[str]] = defaultdict(set)
+        elf_count = 0
+        for path in sorted(bin_dir.rglob("*")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                with path.open("rb") as fh:
+                    if fh.read(4) != b"\x7fELF":
+                        continue
+                    fh.seek(0)
+                    elf = ELFFile(fh)
+                    for soname, version in elf_find_versioned_symbols(elf):
+                        versioned_symbols[soname].add(version)
+            except (ELFError, OSError):
+                continue
+            elf_count += 1
+
+        if elf_count == 0:
+            raise RuntimeError(f"No ELF binaries found under {bin_dir} to derive a glibc tag from.")
+
+        policies = WheelPolicies(libc=Libc.GLIBC, arch=arch)
+        policy_name = policies.versioned_symbols_policy(dict(versioned_symbols)).name
+        if not policy_name.startswith("manylinux_"):
+            raise RuntimeError(
+                f"Bundled binaries require a glibc newer than any manylinux policy "
+                f"auditwheel knows ({policy_name!r}). Upgrade auditwheel or build "
+                f"against an older glibc. Required symbol versions: "
+                f"{dict(versioned_symbols)}"
+            )
+        self.app.display_info(f"Derived manylinux tag from glibc usage: {policy_name}")
+        return policy_name
 
     def force_include_bin_dir(self, bin_dir: Path, root: Path, build_data: dict) -> None:
         """Add all files in bin_dir to the wheel's force_include."""
