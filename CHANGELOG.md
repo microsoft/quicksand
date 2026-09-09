@@ -4,6 +4,14 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [quicksand-alpine v0.9.12] - 2026-09-01
+
+### Changed
+- **quicksand-alpine:** Rebuilt the Alpine 3.23 VM image wheels under a new package version so the complete platform set can be published together.
+
+### Fixed
+- **quicksand-alpine:** Corrected the package documentation to reflect the minimal image contents: BusyBox, OpenRC, dhcpcd, sudo, and disk-resize tools rather than Python, Bash, iproute2, and ping.
+
 ## [quicksand-core v0.12.1, quicksand-smb v0.5.1] - 2026-07-13
 
 Windows polish. Subprocesses no longer flash console windows, CIFS mounts no longer hang on bare-metal WHPX hosts, and repeated SMB directory listings no longer come back empty.
