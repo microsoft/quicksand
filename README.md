@@ -83,16 +83,16 @@ Give multiple agents independent linux user accounts in a single sandbox VM.
 ```python
 async with Sandbox(image="ubuntu") as sb:
     alice = await sb.create_user("alice")
+    bob = await sb.create_user("bob")
+
     await alice.execute("cat > hello.txt", stdin="Hello from Alice!\n")
+    await bob.execute("cat > hello.txt", stdin="Hello from Bob!\n")
 
-    result = await alice.execute("whoami && pwd && cat hello.txt")
-    print(result.stdout)
-
-    await sb.delete_user("alice")  # Also removes the user's home directory
+    for user in (alice, bob):
+        result = await user.execute("whoami && pwd && cat hello.txt")
+        print(result.stdout)
+        await sb.delete_user(user.name)
 ```
-
-Users share one VM, not separate VM isolation boundaries. Requires Ubuntu or
-Alpine image packages 0.10.0 or newer, or a custom image with the updated guest agent.
 
 ### Save and load
 
