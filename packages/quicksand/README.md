@@ -45,25 +45,6 @@ result = await sb.execute("apt update && apt install -y python3")
 print(result.stdout, result.exit_code)
 ```
 
-### Create guest users
-
-Give workloads their own Linux accounts and home directories inside one VM.
-Commands run with the user's identity and default to their home directory.
-
-```python
-async with Sandbox(image="ubuntu") as sb:
-    alice = await sb.create_user("alice")
-    await alice.execute("cat > hello.txt", stdin="Hello from Alice!\n")
-
-    result = await alice.execute("whoami && pwd && cat hello.txt")
-    print(result.stdout)
-
-    await sb.delete_user("alice")  # Also removes the user's home directory
-```
-
-Users share one VM, not separate VM isolation boundaries. Requires Ubuntu or
-Alpine image packages 0.10.0 or newer, or a custom image with the updated guest agent.
-
 ### Mount host directories
 
 Share host directories into the VM at boot or on the fly.
@@ -94,6 +75,24 @@ async with Sandbox(
 ) as sb:
     ...
 ```
+
+### Multiple linux users
+
+Give multiple agents independent linux user accounts in a single sandbox VM.
+
+```python
+async with Sandbox(image="ubuntu") as sb:
+    alice = await sb.create_user("alice")
+    await alice.execute("cat > hello.txt", stdin="Hello from Alice!\n")
+
+    result = await alice.execute("whoami && pwd && cat hello.txt")
+    print(result.stdout)
+
+    await sb.delete_user("alice")  # Also removes the user's home directory
+```
+
+Users share one VM, not separate VM isolation boundaries. Requires Ubuntu or
+Alpine image packages 0.10.0 or newer, or a custom image with the updated guest agent.
 
 ### Save and load
 
