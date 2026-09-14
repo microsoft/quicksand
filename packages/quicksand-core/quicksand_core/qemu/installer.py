@@ -28,7 +28,7 @@ WINDOWS_QEMU_INSTALLER = "qemu-w64-setup-20260324.exe"
 WINDOWS_QEMU_URL = f"https://qemu.weilnetz.de/w64/2026/{WINDOWS_QEMU_INSTALLER}"
 
 WINDOWS_ARM64_QEMU_INSTALLER = "qemu-arm-setup-20260401.exe"
-WINDOWS_ARM64_QEMU_URL = f"https://qemu.weilnetz.de/aarch64/{WINDOWS_ARM64_QEMU_INSTALLER}"
+WINDOWS_ARM64_QEMU_URL = f"https://qemu.weilnetz.de/aarch64/2026/{WINDOWS_ARM64_QEMU_INSTALLER}"
 
 
 def install_qemu() -> None:
