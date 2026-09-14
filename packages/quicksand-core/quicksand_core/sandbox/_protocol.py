@@ -14,6 +14,7 @@ from .._types import (
     ResolvedImage,
     SandboxConfig,
     SaveManifest,
+    StdinSource,
     Timeouts,
 )
 from ..host.dns_proxy import HostDnsProxy
@@ -77,6 +78,8 @@ class _SandboxProtocol(Protocol):
         on_stdout: Callable[[str], None] | None = None,
         on_stderr: Callable[[str], None] | None = None,
         exclusive: bool = False,
+        *,
+        stdin: StdinSource | None = None,
     ) -> ExecuteResult: ...
 
     async def save(

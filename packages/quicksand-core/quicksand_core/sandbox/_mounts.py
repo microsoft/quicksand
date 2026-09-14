@@ -81,6 +81,8 @@ class _MountMixin(_SandboxProtocol):
 
         username, password = self._smb_server.credentials
         cifs_opts = MountOptions.cifs_opts(username, password)
+        if not self._smb_server.supports_byte_range_locks:
+            cifs_opts += ",nobrl"
         mount_cmd = (
             f"sudo mount -t cifs //{gateway}/{shlex.quote(share_name)}"
             f" {shlex.quote(guest_path)}"

@@ -8,6 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from quicksand_core._types import Mount, MountHandle, MountOptions, NetworkMode
+from quicksand_core.host.smb import (
+    QuicksandSMBServer,
+    QuicksandSMBTCPServer,
+    SMBServer,
+    WindowsSMBServer,
+)
 from quicksand_core.sandbox import ExecuteResult, SandboxConfig
 from quicksand_core.sandbox._mounts import _MountMixin
 
@@ -58,6 +64,8 @@ class _MockSandbox(_MountMixin):
         on_stdout=None,
         on_stderr=None,
         exclusive=False,
+        *,
+        stdin=None,
     ):
         return self._execute_fn(command, timeout)
 
@@ -113,6 +121,7 @@ class TestMountShares:
         mock_server = MagicMock()
         mock_server.add_share.return_value = "QUICKSAND0"
         mock_server.credentials = ("guest", "")
+        mock_server.supports_byte_range_locks = False
         mock_create_server.return_value = mock_server
 
         mounts = [Mount(host="/host/data", guest="/mnt/data")]
@@ -124,6 +133,8 @@ class TestMountShares:
         # Should have mkdir + CIFS mount commands
         assert any("mkdir -p /mnt/data" in c for c in commands)
         assert any("mount -t cifs" in c and "QUICKSAND0" in c for c in commands)
+        mount_cmd = next(c for c in commands if "mount -t cifs" in c)
+        assert "nobrl" in shlex.split(mount_cmd)[-1].split(",")
 
     @pytest.mark.asyncio
     @patch("quicksand_core.sandbox._mounts.create_smb_server")
@@ -266,6 +277,7 @@ class TestDynamicMount:
         mock_server = MagicMock()
         mock_server.add_share.return_value = "QUICKSAND0"
         mock_server.credentials = ("guest", "")
+        mock_server.supports_byte_range_locks = False
         mock_create_server.return_value = mock_server
 
         sb = _MockSandbox(mock_execute, [])
@@ -276,6 +288,8 @@ class TestDynamicMount:
         assert handle.guest == "/mnt/data"
         assert handle.readonly is False
         assert handle in sb.active_mounts
+        mount_cmd = next(c for c in commands if "mount -t cifs" in c)
+        assert "nobrl" in shlex.split(mount_cmd)[-1].split(",")
 
     @pytest.mark.asyncio
     @patch("quicksand_core.sandbox._mounts.create_smb_server")
@@ -355,6 +369,39 @@ class TestCleanupMounts:
         errors = await _MountMixin._cleanup_mounts(sb)
         assert len(errors) == 1
         assert errors[0][0] == "SMB server"
+
+
+class TestCifsLocking:
+    @pytest.mark.parametrize("server", [QuicksandSMBServer(), QuicksandSMBTCPServer()])
+    def test_bundled_servers_require_local_locks(self, server):
+        assert not server.supports_byte_range_locks
+
+    def test_native_server_keeps_remote_locks(self):
+        assert WindowsSMBServer(username="test").supports_byte_range_locks
+
+    @pytest.mark.parametrize("supports_locks", [False, True])
+    @pytest.mark.parametrize("readonly", [False, True])
+    @pytest.mark.asyncio
+    async def test_local_locks_depend_on_server_capability(self, supports_locks, readonly):
+        commands = []
+
+        def mock_execute(cmd: str, timeout: float) -> ExecuteResult:
+            commands.append(cmd)
+            return ExecuteResult(stdout="", stderr="", exit_code=0)
+
+        server = MagicMock(spec=SMBServer)
+        server.credentials = ("guest", "")
+        server.supports_byte_range_locks = supports_locks
+        server.get_guestfwd_cmd.return_value = "python -m quicksand_smb"
+
+        sb = _MockSandbox(mock_execute, [])
+        sb._smb_server = server
+        await sb._mount_cifs_share("QUICKSAND0", "/mnt/data", readonly)
+
+        mount_cmd = next(c for c in commands if "mount -t cifs" in c)
+        options = shlex.split(mount_cmd)[-1].split(",")
+        assert ("nobrl" in options) is not supports_locks
+        assert ("ro" in options) is readonly
 
 
 class TestCifsOpts:

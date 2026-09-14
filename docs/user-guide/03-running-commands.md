@@ -52,7 +52,50 @@ result = await sb.execute(
 )
 ```
 
-The callbacks receive chunks of output in real time via Server-Sent Events. The final `ExecuteResult` still contains the complete stdout/stderr.
+The callbacks receive chunks of output in real time over virtio-serial, or via
+Server-Sent Events when using the HTTP fallback. The final `ExecuteResult` still
+contains the complete stdout/stderr.
+
+## Streaming stdin
+
+Pass an async iterable of byte chunks to feed a running command incrementally:
+
+```python
+async def input_chunks():
+    yield b"first line\n"
+    yield b"second line\n"
+
+result = await sb.execute(
+    "cat",
+    stdin=input_chunks(),
+    on_stdout=lambda chunk: print(chunk, end=""),
+)
+```
+
+The producer is advanced as the guest accepts input, rather than being buffered
+in full. Output callbacks run concurrently, so the producer can wait for output
+before supplying its next chunk. Finishing the iterable closes stdin (EOF).
+
+For small inputs, `stdin` also accepts `bytes` or a UTF-8 string:
+
+```python
+result = await sb.execute("wc -c", stdin=b"hello")
+result = await sb.execute("cat", stdin="hello\n")
+result = await sb.execute("cat", stdin=b"")  # Send EOF immediately
+```
+
+Async iterables must yield `bytes`, including for binary data. Quicksand splits
+large chunks automatically. Omitting `stdin` preserves the usual execution
+behavior.
+
+Input consumption stops when the command exits. Cancelling the call or reaching
+its timeout terminates the stdin-enabled command's process group. Exceptions
+from the input producer propagate to the caller after the command is cancelled.
+
+Streaming stdin requires a guest image whose agent advertises the
+`stdin_streaming` capability. Older images return an explicit error without
+starting the command or consuming input. Update or rebuild the image with the
+new guest agent; upgrading the host Python package alone is not sufficient.
 
 ## Multi-step workflows
 

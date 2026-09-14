@@ -78,6 +78,11 @@ class SMBServer(ABC):
         """Returns (username, password) for CIFS mount authentication."""
         ...
 
+    @property
+    def supports_byte_range_locks(self) -> bool:
+        """Whether the server implements SMB byte-range locking."""
+        return True
+
     @abstractmethod
     def list_shares(self) -> list[dict]:
         """List all active shares.
@@ -115,6 +120,10 @@ class _ConfigBackedSMBServer(SMBServer):
     @property
     def credentials(self) -> tuple[str, str]:
         return ("guest", "")
+
+    @property
+    def supports_byte_range_locks(self) -> bool:
+        return False
 
     def start(self) -> None:
         self._temp_dir = Path(tempfile.mkdtemp(prefix="quicksand-smb-"))

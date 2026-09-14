@@ -7,6 +7,20 @@ info:
     ## Authentication
     - Token and port are passed via kernel command line (`quicksand_token`, `quicksand_port`)
     - All endpoints except `/authenticate` require `Authorization: Bearer <token>` header
+
+    ## Optional stdin streaming
+    Successful authentication advertises `capabilities: ["stdin_streaming"]`.
+    Released images without this capability do not support stdin streaming;
+    clients must check the capability before sending `stdin_id`.
+
+    The virtio-serial transport uses the same execute_stream, stdin, and cancel
+    parameters. Its successful authenticate result includes the same capabilities.
+    Control replies are `{"id": <control request id>, "result": <response>}`.
+    Every streaming event includes the original execute_stream request `id`.
+    Invalid serial requests receive `{"id": <request id>, "error": {"message": ...}}`;
+    rejected stdin-enabled execute_stream requests also receive an exit event with
+    exit_code -1. Stdin and cancel controls require an authenticated serial session
+    and are processed independently of exclusive commands and blocked stdin writes.
   version: 1.0.0
 
 servers:
@@ -44,6 +58,13 @@ components:
       properties:
         authenticated:
           type: boolean
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: |
+            Successful authentication includes "stdin_streaming". Older guest
+            images omit this field; clients must not assume support when absent.
 
     ExecuteRequest:
       type: object
@@ -62,6 +83,88 @@ components:
           type: string
           nullable: true
           description: Working directory for command execution
+        exclusive:
+          type: boolean
+          default: false
+          description: Reject other execution requests while this command runs
+
+    StdinId:
+      type: string
+      pattern: '^[0-9a-fA-F]{32}$'
+      description: Random UUID hex string identifying one stdin-enabled execution
+
+    ExecuteStreamRequest:
+      allOf:
+        - $ref: '#/components/schemas/ExecuteRequest'
+        - type: object
+          properties:
+            stdin_id:
+              $ref: '#/components/schemas/StdinId'
+            shell:
+              type: string
+              default: /bin/sh
+              description: |
+                Shell executable for stdin-enabled execution, invoked with -c.
+                Without stdin_id, execution retains the legacy /bin/sh behavior.
+
+    StdinRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [stdin_id, data]
+          properties:
+            stdin_id:
+              $ref: '#/components/schemas/StdinId'
+            data:
+              type: string
+              contentEncoding: base64
+              maxLength: 87384
+              description: |
+                Standard padded base64, decoding to at most 65536 bytes.
+                Empty data is allowed and is not EOF. Invalid base64, oversized
+                decoded chunks, and data combined with eof are rejected.
+        - type: object
+          additionalProperties: false
+          required: [stdin_id, eof]
+          properties:
+            stdin_id:
+              $ref: '#/components/schemas/StdinId'
+            eof:
+              type: boolean
+              const: true
+              description: Close the child's stdin pipe; false or null is invalid
+
+    StdinResponse:
+      type: object
+      required: [closed]
+      properties:
+        closed:
+          type: boolean
+          description: |
+            False only after the entire chunk has actually been written to the
+            child pipe, not merely queued. True after EOF or if input is already
+            closed, the child exited, or stdin_id is absent/completed. A broken
+            pipe is closed input, not a failure of an otherwise successful command.
+            EOF/BrokenPipe closes only stdin: stdin_id remains cancellable while
+            the command continues processing, until execution cleanup completes.
+
+    CancelRequest:
+      type: object
+      additionalProperties: false
+      required: [stdin_id]
+      properties:
+        stdin_id:
+          $ref: '#/components/schemas/StdinId'
+
+    CancelResponse:
+      type: object
+      required: [cancelled]
+      properties:
+        cancelled:
+          type: boolean
+          description: |
+            True after cancelling a live stdin execution and completing its
+            process cleanup. False when absent, completed, or already cancelled.
 
     ExecuteResponse:
       type: object
@@ -87,10 +190,18 @@ components:
       properties:
         stream:
           type: string
-          enum: [stdout, stderr, exit]
+          enum: [ready, stdout, stderr, exit]
+          description: |
+            ready occurs only for stdin-enabled execution, after registration
+            and process startup. Startup failure instead emits stderr and exit.
         data:
           type: string
-          description: Output text (for stdout/stderr events)
+          description: |
+            Output text (stdout/stderr events). With stdin_id, output is
+            incremental even without a newline and does not add newlines.
+            UTF-8 characters split across reads are preserved; invalid UTF-8 is
+            replaced with U+FFFD. Startup, timeout, and cancellation failures
+            emit a stderr message followed by exit_code -1.
         exit_code:
           type: integer
           description: Process exit code (for exit events only)
@@ -176,15 +287,28 @@ paths:
       summary: Execute a shell command with streaming output
       description: |
         Run a shell command and stream stdout/stderr as SSE events in real-time.
-        Same request body as /execute. The response is a text/event-stream where
-        each event has a JSON payload with "stream" (stdout/stderr/exit) and
-        "data" or "exit_code" fields.
+        Without stdin_id, preserve legacy execution and line-based output.
+        With stdin_id, pipe stdin and emit {"stream":"ready"} after the process
+        and registry entry are ready. Hosts wait for ready before sending input
+        via /stdin. An active stdin_id cannot be reused or overwritten.
+
+        The response is a text/event-stream with JSON in ordinary SSE data
+        events: ready, stdout/stderr with data strings, and exit with exit_code.
+        Command output is incremental, including text without a trailing newline.
+        Stdout/stderr events can arrive before any input is sent. A startup
+        failure emits a stderr message and exit_code -1 without ready.
+
+        Timeout, /cancel, or output transport disconnection terminates the
+        command's process group and descendants, reaps the child, closes stdin,
+        removes the registry entry, and releases exclusivity. Timeout/cancel
+        emits a stderr message followed by exit_code -1 when connected.
+        Cleanup does not wait for the host to consume final output.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ExecuteRequest'
+              $ref: '#/components/schemas/ExecuteStreamRequest'
       responses:
         '200':
           description: SSE stream of command output
@@ -192,6 +316,107 @@ paths:
             text/event-stream:
               schema:
                 $ref: '#/components/schemas/ExecuteStreamEvent'
+        '401':
+          description: Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid stdin_id or stdin-enabled execution parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: stdin_id is already active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: An exclusive command is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /stdin:
+    post:
+      summary: Write an acknowledged binary stdin chunk or close stdin
+      description: |
+        Requires bearer authentication, including while an exclusive command
+        runs. Submit either a base64 data chunk or eof: true, never both.
+        Hosts send one chunk at a time and await its acknowledgement. Do not
+        retry requests: chunks are not deduplicated. Buffering is bounded;
+        excess concurrent writes are rejected rather than queued indefinitely.
+        On closed: true, stop producing input and await the execution's final
+        output. When the input iterable is exhausted, send eof: true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StdinRequest'
+      responses:
+        '200':
+          description: Chunk written, EOF applied, or input already closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StdinResponse'
+        '400':
+          description: Malformed request, invalid base64, or decoded chunk over 65536 bytes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A stdin request is already pending and the bounded queue is full
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected pipe write error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cancel:
+    post:
+      summary: Cancel a stdin-enabled execution and clean up its process group
+      description: |
+        Requires bearer authentication. Works during exclusive execution and
+        while a stdin write is blocked. Hosts cancel when their input producer
+        raises or the execute operation is cancelled. Unrelated executions
+        are not cancelled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+      responses:
+        '200':
+          description: Execution cancelled and reaped, or already absent/completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelResponse'
+        '400':
+          description: Malformed cancel request or invalid stdin_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Invalid or missing token
           content:

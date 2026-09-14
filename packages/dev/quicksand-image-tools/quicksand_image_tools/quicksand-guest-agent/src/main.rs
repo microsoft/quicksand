@@ -3,6 +3,8 @@
 //! Minimal HTTP API running inside the guest VM to handle commands from the host.
 //! Reads configuration (token, port) from kernel command line.
 
+mod stdin_execution;
+
 use axum::{
     extract::State,
     http::{header, StatusCode},
@@ -28,7 +30,9 @@ use std::{
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::timeout;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+
+use stdin_execution::{ExecutionRequest, InputRequest, RequestError, StdinExecutions};
 
 // ============================================================================
 // Logging
@@ -68,6 +72,7 @@ struct AppState {
     /// True while an exclusive command (sync, fstrim, etc.) is running.
     /// Other execute requests are rejected with 503 while this is set.
     exclusive_busy: Arc<AtomicBool>,
+    stdin_executions: StdinExecutions,
 }
 
 // ============================================================================
@@ -82,6 +87,21 @@ struct AuthRequest {
 #[derive(Serialize)]
 struct AuthResponse {
     authenticated: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    capabilities: Vec<&'static str>,
+}
+
+impl AuthResponse {
+    fn new(authenticated: bool) -> Self {
+        Self {
+            authenticated,
+            capabilities: if authenticated {
+                vec!["stdin_streaming"]
+            } else {
+                Vec::new()
+            },
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -93,6 +113,21 @@ struct ExecuteRequest {
     /// When true, reject all other execute requests while this one is running.
     #[serde(default)]
     exclusive: bool,
+    shell: Option<String>,
+    stdin_id: Option<String>,
+}
+
+impl ExecuteRequest {
+    fn into_stdin_execution(self) -> ExecutionRequest {
+        ExecutionRequest {
+            stdin_id: self.stdin_id.expect("stdin_id was checked"),
+            command: self.command,
+            shell: self.shell.unwrap_or_else(|| "/bin/sh".into()),
+            cwd: self.cwd,
+            timeout: self.timeout,
+            exclusive: self.exclusive,
+        }
+    }
 }
 
 fn default_timeout() -> f64 {
@@ -150,9 +185,9 @@ async fn authenticate(
     Json(req): Json<AuthRequest>,
 ) -> impl IntoResponse {
     if req.token == *state.token {
-        (StatusCode::OK, Json(AuthResponse { authenticated: true }))
+        (StatusCode::OK, Json(AuthResponse::new(true)))
     } else {
-        (StatusCode::UNAUTHORIZED, Json(AuthResponse { authenticated: false }))
+        (StatusCode::UNAUTHORIZED, Json(AuthResponse::new(false)))
     }
 }
 
@@ -242,6 +277,22 @@ async fn execute_stream(
 ) -> impl IntoResponse {
     if let Err(e) = verify_token(&headers, &state.token) {
         return e.into_response();
+    }
+
+    if req.stdin_id.is_some() {
+        let output = match state.stdin_executions.start(
+            req.into_stdin_execution(),
+            Arc::clone(&state.exclusive_busy),
+        ) {
+            Ok(output) => output,
+            Err(error) => return stdin_request_error(error),
+        };
+        let stream = ReceiverStream::new(output).map(|event| {
+            Ok::<_, Infallible>(
+                Event::default().data(serde_json::to_string(&event).expect("serializable output")),
+            )
+        });
+        return Sse::new(stream).into_response();
     }
 
     // Reject if an exclusive command is already running.
@@ -359,6 +410,56 @@ async fn execute_stream(
 
     let stream = ReceiverStream::new(rx);
     Sse::new(stream).into_response()
+}
+
+fn stdin_request_error(error: RequestError) -> axum::response::Response {
+    let status = match &error {
+        RequestError::Invalid(_) => StatusCode::BAD_REQUEST,
+        RequestError::Conflict(_) => StatusCode::CONFLICT,
+        RequestError::ExclusiveBusy => StatusCode::SERVICE_UNAVAILABLE,
+        RequestError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (
+        status,
+        Json(ErrorResponse {
+            detail: error.to_string(),
+        }),
+    )
+        .into_response()
+}
+
+async fn stdin(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(value): Json<serde_json::Value>,
+) -> axum::response::Response {
+    if let Err(error) = verify_token(&headers, &state.token) {
+        return error.into_response();
+    }
+    let ack = match InputRequest::parse(value).and_then(|input| state.stdin_executions.submit(input)) {
+        Ok(ack) => ack,
+        Err(error) => return stdin_request_error(error),
+    };
+    match ack.wait().await {
+        Ok(closed) => Json(serde_json::json!({"closed": closed})).into_response(),
+        Err(error) => stdin_request_error(error),
+    }
+}
+
+async fn cancel(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(value): Json<serde_json::Value>,
+) -> axum::response::Response {
+    if let Err(error) = verify_token(&headers, &state.token) {
+        return error.into_response();
+    }
+    let stdin_id = match stdin_execution::parse_cancel(value) {
+        Ok(stdin_id) => stdin_id,
+        Err(error) => return stdin_request_error(error),
+    };
+    let cancelled = state.stdin_executions.cancel(&stdin_id).await;
+    Json(serde_json::json!({"cancelled": cancelled})).into_response()
 }
 
 async fn ping(
@@ -570,15 +671,31 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
 
     log(&format!("Virtio-serial channel open: {}", VIRTIO_SERIAL_PATH));
 
+    serve_virtio_serial(chan, token, exclusive_busy, StdinExecutions::default()).await;
+}
+
+async fn serve_virtio_serial(
+    chan: Arc<SerialChannel>,
+    token: String,
+    exclusive_busy: Arc<AtomicBool>,
+    stdin_executions: StdinExecutions,
+) {
     // Dedicated writer task: request handlers (including spawned command tasks)
-    // send frames through this channel; the writer drains it and serialises the
-    // frames onto the wire in arrival order, so responses for different request
-    // ids never interleave. The reader loop below shares the same fd via
+    // send frames through output channels. One writer serialises whole frames,
+    // preserving each stream's order without interleaving bytes from different
+    // request ids. The reader loop below shares the same fd via
     // `AsyncFd`, which tracks read/write readiness independently.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
+    // Keep legacy output unchanged, but backpressure the new stdin executions.
+    let (stream_tx, mut stream_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(64);
     let writer_chan = Arc::clone(&chan);
     let writer_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
+        loop {
+            let msg = tokio::select! {
+                Some(msg) = rx.recv() => msg,
+                Some(msg) = stream_rx.recv() => msg,
+                else => break,
+            };
             if let Err(e) = write_frame_serial(&writer_chan, &msg).await {
                 log(&format!("Write error: {}", e));
                 break;
@@ -589,10 +706,16 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
     let mut authenticated = false;
 
     loop {
-        let frame = match read_frame_serial(&chan).await {
-            Ok(f) => f,
-            Err(e) => {
-                log(&format!("Virtio-serial read error: {}", e));
+        let frame = tokio::select! {
+            frame = read_frame_serial(&chan) => match frame {
+                Ok(frame) => frame,
+                Err(error) => {
+                    log(&format!("Virtio-serial read error: {error}"));
+                    break;
+                }
+            },
+            _ = tx.closed() => {
+                log("Virtio-serial writer disconnected");
                 break;
             }
         };
@@ -605,7 +728,7 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
             "authenticate" => {
                 let req_token = params.get("token").and_then(|v| v.as_str()).unwrap_or("");
                 authenticated = req_token == token;
-                send_frame(&tx, serde_json::json!({"id": id, "result": {"authenticated": authenticated}}));
+                send_frame(&tx, serde_json::json!({"id": id, "result": AuthResponse::new(authenticated)}));
             }
             "ping" if authenticated => {
                 send_frame(&tx, serde_json::json!({"id": id, "result": {"pong": true, "pid": std::process::id()}}));
@@ -649,6 +772,36 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 });
             }
             "execute_stream" if authenticated => {
+                if params.get("stdin_id").is_some_and(|value| !value.is_null()) {
+                    let result = serde_json::from_value::<ExecuteRequest>(params)
+                        .map_err(|error| RequestError::Invalid(format!("Invalid stdin execution request: {error}")))
+                        .and_then(|request| {
+                            stdin_executions.start(
+                                request.into_stdin_execution(),
+                                Arc::clone(&exclusive_busy),
+                            )
+                        });
+                    match result {
+                        Ok(mut output) => {
+                            let tx = stream_tx.clone();
+                            tokio::spawn(async move {
+                                while let Some(event) = output.recv().await {
+                                    let mut frame = serde_json::to_value(event).expect("serializable output");
+                                    frame["id"] = serde_json::json!(id);
+                                    if tx.send(frame).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            });
+                        }
+                        Err(error) => {
+                            send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}}));
+                            send_frame(&tx, serde_json::json!({"id": id, "stream": "exit", "exit_code": -1}));
+                        }
+                    }
+                    continue;
+                }
+
                 let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let timeout_secs = params.get("timeout").and_then(|v| v.as_f64()).unwrap_or(30.0);
                 let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -738,6 +891,33 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                     }
                 });
             }
+            "stdin" if authenticated => {
+                match InputRequest::parse(params).and_then(|input| stdin_executions.submit(input)) {
+                    Ok(ack) => {
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            match ack.wait().await {
+                                Ok(closed) => send_frame(&tx, serde_json::json!({"id": id, "result": {"closed": closed}})),
+                                Err(error) => send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}})),
+                            }
+                        });
+                    }
+                    Err(error) => send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}})),
+                }
+            }
+            "cancel" if authenticated => {
+                match stdin_execution::parse_cancel(params) {
+                    Ok(stdin_id) => {
+                        let executions = stdin_executions.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let cancelled = executions.cancel(&stdin_id).await;
+                            send_frame(&tx, serde_json::json!({"id": id, "result": {"cancelled": cancelled}}));
+                        });
+                    }
+                    Err(error) => send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}})),
+                }
+            }
             _ if !authenticated => {
                 send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Not authenticated"}}));
             }
@@ -747,15 +927,31 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
         }
     }
 
-    // Read loop ended (peer closed or read error). Drop the last sender so the
-    // writer task's channel closes and it exits, then join it.
-    drop(tx);
-    let _ = writer_task.await;
+    stdin_executions.cancel_all().await;
+    // A disconnected peer may leave the device writer blocked on writability.
+    // Do not wait for legacy command senders to close before ending transport I/O.
+    writer_task.abort();
+    if let Err(error) = writer_task.await {
+        if !error.is_cancelled() {
+            log(&format!("Virtio-serial writer task failed: {error}"));
+        }
+    }
 }
 
 // ============================================================================
 // Main
 // ============================================================================
+
+fn http_router(state: AppState) -> Router {
+    Router::new()
+        .route("/authenticate", post(authenticate))
+        .route("/execute", post(execute))
+        .route("/execute_stream", post(execute_stream))
+        .route("/stdin", post(stdin))
+        .route("/cancel", post(cancel))
+        .route("/ping", get(ping))
+        .with_state(state)
+}
 
 #[tokio::main]
 async fn main() {
@@ -802,14 +998,10 @@ async fn main() {
     let state = AppState {
         token: Arc::new(token),
         exclusive_busy,
+        stdin_executions: StdinExecutions::default(),
     };
 
-    let app = Router::new()
-        .route("/authenticate", post(authenticate))
-        .route("/execute", post(execute))
-        .route("/execute_stream", post(execute_stream))
-        .route("/ping", get(ping))
-        .with_state(state);
+    let app = http_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log(&format!("Listening on {}", addr));
@@ -817,3 +1009,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
+
+#[cfg(test)]
+mod transport_tests;

@@ -17,7 +17,7 @@ This skips the entire firmware boot sequence and starts the Linux kernel immedia
 
 ## Agent token injection
 
-The guest agent is a minimal Rust HTTP server baked into the initrd. It reads its auth token and port from the kernel command line (`/proc/cmdline`):
+The guest agent is a minimal Rust server bundled in the VM image. It reads its auth token and port from the kernel command line (`/proc/cmdline`):
 
 ```
 quicksand_token=abc123 quicksand_port=8080
@@ -39,7 +39,12 @@ The VM's serial port is connected to QEMU's stdin/stdout. Combined with `console
 result = await sb.execute("ls /")
 ```
 
-The `execute()` call sends an HTTP POST to the guest agent. But the guest is behind QEMU's NAT. It doesn't have a real IP on the host network. The connection is routed via a port forward in the `-netdev` flags:
+Quicksand normally sends length-prefixed JSON frames over a virtio-serial channel.
+Request IDs allow command replies and output events to be routed independently.
+This transport does not require guest networking.
+
+The HTTP fallback sends a POST to the guest agent. The guest is behind QEMU's
+NAT, so this connection is routed via a port forward in the `-netdev` flags:
 
 ```bash
 -netdev user,id=net0,...,hostfwd=tcp:127.0.0.1:8080-:8080
@@ -61,12 +66,42 @@ sb.execute("ls /")
 result = await sb.execute("apt install -y python3", on_stdout=callback)
 ```
 
-Streaming uses the `/execute_stream` endpoint instead of `/execute`. The guest agent responds with Server-Sent Events (SSE). Each event contains one output chunk.
+Streaming uses the `execute_stream` method over virtio-serial, or the
+`/execute_stream` endpoint over HTTP. HTTP responses use Server-Sent Events
+(SSE); serial output events additionally carry the execution request's `id`.
 
 ```
-data: {"type": "stdout", "data": "Reading package lists..."}
-data: {"type": "stdout", "data": "Building dependency tree..."}
-data: {"type": "exit", "exit_code": 0}
+data: {"stream": "stdout", "data": "Reading package lists..."}
+data: {"stream": "stdout", "data": "Building dependency tree..."}
+data: {"stream": "exit", "exit_code": 0}
 ```
 
 The HTTP connection stays open until the command finishes. Callbacks fire for each chunk as it arrives.
+
+## Incremental stdin
+
+Authentication responses advertise `capabilities: ["stdin_streaming"]` when the
+guest supports input streaming. The host requires this capability before
+starting a command with stdin, so old agents cannot silently ignore the input.
+
+The host adds a unique `stdin_id` to `execute_stream`. Once the process and its
+input channel are ready, the agent sends `{"stream": "ready"}`. The host then
+sends separate `stdin` requests (HTTP `POST /stdin` or serial method `stdin`):
+
+```json
+{"stdin_id": "<execution>", "data": "<base64-encoded bytes>"}
+```
+
+Each chunk contains at most 64 KiB of decoded input. The agent acknowledges it
+after writing to the child pipe, and the host waits for that acknowledgement
+before requesting more input. Exhausting the input iterable sends
+`{"stdin_id": "<execution>", "eof": true}` to close the pipe.
+
+Input and cancellation requests bypass the HTTP execution lock and remain
+available during exclusive commands. They are not retried: replaying a write
+after a lost acknowledgement could duplicate input. Output continues on the
+original stream while input is being supplied.
+
+Cancellation uses HTTP `POST /cancel` or serial method `cancel`, with the same
+`stdin_id`. The agent terminates the execution's process group and releases its
+input and exclusive-command state. Guest timeouts perform the same cleanup.

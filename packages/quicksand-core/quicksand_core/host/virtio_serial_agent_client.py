@@ -23,8 +23,10 @@ import struct
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from .._types import QuicksandGuestAgentMethod, Timeouts
+from .._types import QuicksandGuestAgentMethod, StdinSource, Timeouts
+from ._stdin import STDIN_CAPABILITY, STDIN_UNSUPPORTED, run_with_stdin, validate_stdin
 
 logger = logging.getLogger("quicksand.virtio_agent")
 
@@ -82,10 +84,15 @@ class VirtioSerialAgentClient:
         self._pending: dict[int, asyncio.Future[dict]] = {}
         self._pending_streams: dict[int, asyncio.Queue[dict]] = {}
         self._request_id = 0
+        self._supports_stdin = False
 
     @property
     def is_connected(self) -> bool:
         return self._writer is not None and self._reader_task is not None
+
+    @property
+    def supports_stdin(self) -> bool:
+        return self._supports_stdin
 
     def _next_id(self) -> int:
         self._request_id += 1
@@ -169,6 +176,10 @@ class VirtioSerialAgentClient:
                 auth_writes_pending -= 1
                 result = response.get("result", {})
                 if result.get("authenticated"):
+                    capabilities = result.get("capabilities", [])
+                    self._supports_stdin = (
+                        isinstance(capabilities, list) and STDIN_CAPABILITY in capabilities
+                    )
                     logger.debug("Virtio-serial agent authentication successful")
                     # Drain replies to any earlier auth writes that timed out.
                     # By the time we got our successful reply, those replies
@@ -268,6 +279,7 @@ class VirtioSerialAgentClient:
         self._pending_streams.clear()
 
     def _close_transport(self) -> None:
+        self._supports_stdin = False
         if self._writer:
             with contextlib.suppress(Exception):
                 self._writer.close()
@@ -294,6 +306,8 @@ class VirtioSerialAgentClient:
         method_map = {
             QuicksandGuestAgentMethod.EXECUTE: "execute",
             QuicksandGuestAgentMethod.PING: "ping",
+            QuicksandGuestAgentMethod.STDIN: "stdin",
+            QuicksandGuestAgentMethod.CANCEL: "cancel",
         }
         method_name = method_map.get(method)
         if method_name is None:
@@ -309,26 +323,25 @@ class VirtioSerialAgentClient:
         msg = {"id": request_id, "method": method_name, "params": params}
 
         try:
-            async with self._writer_lock:
-                self._writer.write(_encode_frame(msg))
-                await self._writer.drain()
-        except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            try:
+                async with self._writer_lock:
+                    self._writer.write(_encode_frame(msg))
+                    await self._writer.drain()
+                response = await asyncio.wait_for(future, timeout=timeout)
+            except TimeoutError:
+                return {"error": {"message": f"Request timed out after {timeout}s"}}
+            except (ConnectionResetError, OSError) as error:
+                return {"error": {"message": f"Connection error: {error}"}}
+            if "error" in response:
+                return {"error": response["error"]}
+            return {"result": response.get("result", response)}
+        finally:
             self._pending.pop(request_id, None)
-            return {"error": {"message": f"Connection error: {e}"}}
-
-        try:
-            response = await asyncio.wait_for(future, timeout=timeout)
-        except TimeoutError:
-            # Caller gives up: pop our slot so a late reply is dropped at
-            # the reader instead of poisoning the next call's read.
-            self._pending.pop(request_id, None)
-            return {"error": {"message": f"Request timed out after {timeout}s"}}
-        except (ConnectionResetError, OSError) as e:
-            return {"error": {"message": f"Connection error: {e}"}}
-
-        if "error" in response:
-            return {"error": response["error"]}
-        return {"result": response.get("result", response)}
+            if not future.done():
+                future.cancel()
+            elif not future.cancelled():
+                # A disconnect may fail the future before the writer finishes.
+                future.exception()
 
     async def send_stream_request(
         self,
@@ -336,9 +349,21 @@ class VirtioSerialAgentClient:
         timeout: float,
         on_stdout: Callable[[str], None] | None = None,
         on_stderr: Callable[[str], None] | None = None,
+        *,
+        stdin: StdinSource | None = None,
     ) -> dict[str, Any]:
         if self._writer is None or self._reader_task is None or self._writer_lock is None:
             raise RuntimeError("Not connected to agent")
+
+        stdin_id = None
+        ready = None
+        if stdin is not None:
+            validate_stdin(stdin)
+            if not self.supports_stdin:
+                return {"error": {"message": STDIN_UNSUPPORTED}}
+            stdin_id = uuid4().hex
+            ready = asyncio.Event()
+            params = {**params, "stdin_id": stdin_id}
 
         request_id = self._next_id()
         queue: asyncio.Queue[dict] = asyncio.Queue()
@@ -346,21 +371,33 @@ class VirtioSerialAgentClient:
 
         msg = {"id": request_id, "method": "execute_stream", "params": params}
 
-        try:
-            async with self._writer_lock:
-                self._writer.write(_encode_frame(msg))
-                await self._writer.drain()
-        except (ConnectionResetError, BrokenPipeError, OSError) as e:
-            self._pending_streams.pop(request_id, None)
-            return {"error": {"message": f"Stream connection error: {e}"}}
+        writer = self._writer
+        writer_lock = self._writer_lock
+
+        async def receive() -> dict[str, Any]:
+            try:
+                async with writer_lock:
+                    writer.write(_encode_frame(msg))
+                    await writer.drain()
+            except (ConnectionResetError, OSError) as error:
+                return {"error": {"message": f"Stream connection error: {error}"}}
+            return await self._consume_stream(queue, on_stdout, on_stderr, ready)
 
         try:
-            return await asyncio.wait_for(
-                self._consume_stream(queue, on_stdout, on_stderr),
-                timeout=timeout,
-            )
-        except TimeoutError:
-            return {"error": {"message": f"Stream timed out after {timeout}s"}}
+            if stdin is not None:
+                assert stdin_id is not None and ready is not None
+                return await run_with_stdin(
+                    receive(),
+                    stdin,
+                    stdin_id=stdin_id,
+                    ready=ready,
+                    send_request=self.send_request,
+                    timeout=timeout,
+                )
+            try:
+                return await asyncio.wait_for(receive(), timeout=timeout)
+            except TimeoutError:
+                return {"error": {"message": f"Stream timed out after {timeout}s"}}
         finally:
             # Drop any further frames for this id (the reader will log+skip
             # them once we're no longer registered).
@@ -371,6 +408,7 @@ class VirtioSerialAgentClient:
         queue: asyncio.Queue[dict],
         on_stdout: Callable[[str], None] | None,
         on_stderr: Callable[[str], None] | None,
+        ready: asyncio.Event | None = None,
     ) -> dict[str, Any]:
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
@@ -379,7 +417,10 @@ class VirtioSerialAgentClient:
             if "error" in frame:
                 return {"error": frame["error"]}
             stream = frame.get("stream")
-            if stream == "stdout":
+            if stream == "ready":
+                if ready is not None:
+                    ready.set()
+            elif stream == "stdout":
                 data = frame.get("data", "")
                 stdout_parts.append(data)
                 if on_stdout:

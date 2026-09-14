@@ -54,6 +54,8 @@ class _MockSandbox(_LifecycleMixin):
         on_stdout=None,
         on_stderr=None,
         exclusive=False,
+        *,
+        stdin=None,
     ):
         return self._execute_fn(command, timeout)
 
