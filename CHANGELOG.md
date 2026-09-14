@@ -21,6 +21,7 @@ Streaming command input, guest OS accounts, and more reliable mounted-file workf
 ### Fixed
 - **quicksand-core:** Bundled SMB mounts use guest-local CIFS locks so `flock` and SQLite commits work. Native SMB retains server-side byte-range locking. Guest-local locks do not coordinate with host processes, other VMs, or separate mounts. (#44)
 - **quicksand-build-tools v0.6.0 / quicksand-qemu v0.5.12:** Linux wheel tags reflect the actual glibc requirements of bundled ELF binaries and libraries instead of always claiming manylinux 2.17 compatibility.
+- **quicksand-image-tools / quicksand-agent / quicksand-cua:** Overlay Python installers honor configured host package indexes without putting index URLs in command arguments or persisting index settings in the image.
 
 ### Released (dependency updates)
 - quicksand-agent v0.4.10, quicksand-cua v0.3.12, quicksand-alpine-desktop v0.9.10, quicksand-ubuntu-desktop v0.9.10, quicksand-base-scaffold v0.3.11, and quicksand-overlay-scaffold v0.3.11. Updated dependency ranges pick up the new core, image tooling, and base images.

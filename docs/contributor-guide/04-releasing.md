@@ -4,11 +4,14 @@ Releases are managed via the `/release` Claude Code skill.
 
 ## Flow
 
-1. **Dry run.** Run `uv run poe release:dry-run` to preview what will be built.
-2. **Branch.** Create `release/v{version}` from main.
-3. **Dispatch.** Run `gh workflow run release.yml --ref release/v{version}`.
-4. **Monitor.** CI runs check, build, overlay build, test, and release.
-5. **Post-release.** Verify per-package releases and test install.
+1. **Prepare.** Use a non-main branch based on main. Run `uv run uvr status` to inspect changed packages and their baseline tags.
+2. **Version.** Select feature/minor versions and dependency updates with `uv run uvr version`. Strip development suffixes from release targets with `--bump stable`, update the changelog, then commit and push.
+3. **Preview.** Run `uv run uvr release --dry-run`. The worktree must be clean and local HEAD must match the remote branch.
+4. **Dispatch.** Run `uv run uvr release`, supplying approved notes with `--release-notes PACKAGE @FILE`. The CLI generates the required workflow `plan` input.
+5. **Verify and merge.** Monitor every build, license, release, PyPI publish, and next-development-version job. Verify published artifacts and installation, then fetch and merge the remote release branch tip back to main, including the CI-generated development-version commit.
+
+The release workflow runs unit checks, but its VM integration job is currently
+disabled. Run relevant VM checks separately before publishing.
 
 ## Versioning
 
@@ -21,24 +24,39 @@ Patch versions are set automatically by the previous release's dev bump.
 
 ## Per-package releases
 
-Each package gets its own GitHub release (`quicksand-core/v0.7.0`, `quicksand-qemu/v0.4.0`, etc.). Unchanged packages keep their existing releases. Change detection and internal dependency pinning are handled automatically by `quicksand-plan-release`.
+Each package gets its own GitHub release (`quicksand-core/v0.13.0`, `quicksand-qemu/v0.5.12`, etc.). Unchanged packages keep their existing releases. `uvr` detects committed file changes; version commands update internal dependency ranges when required.
+
+## Runners and package indexes
+
+Runner assignments live in `[tool.uvr.runners]` in `pyproject.toml`. The Windows
+ARM64 QEMU build uses GitHub's `windows-11-arm` runner. Linux and Windows x64
+builds use the configured Azure VMs, and ARM64 image builds use the local macOS
+runner. Set `AZURE_SUBSCRIPTION_ID` to the intended subscription before running
+`uv run quicksand-runners start`; this command manages Azure VMs, not the macOS
+runner.
+
+Agent and CUA overlay Python installs inherit the host's `PIP_INDEX_URL`,
+`PIP_EXTRA_INDEX_URL`, `UV_DEFAULT_INDEX`, `UV_INDEX_URL`, and
+`UV_EXTRA_INDEX_URL` through `run_python_install()` in the image tools. The guest
+requires Python 3 and a stdin-capable agent. Settings are passed over stdin,
+apply only to the installer process, and are not saved in the image. This lets
+release builds use the configured package mirror without changing users'
+runtime package-index defaults.
 
 ## Fixing CI failures
 
 Fix on the release branch, push, re-dispatch:
 
 ```bash
-git checkout release/v<VERSION>
 # fix the issue
-git push origin release/v<VERSION>
-gh workflow run release.yml --ref release/v<VERSION>
+git push
+uv run uvr release --release-notes PACKAGE @FILE
 ```
 
-To reuse builds from a previous run:
-```bash
-gh workflow run release.yml --ref release/v<VERSION> \
-  -f plan="$(uv run quicksand-plan-release --reuse-base-build <RUN_ID> --reuse-overlay-build <RUN_ID>)"
-```
+For a late failure, `uvr release` supports `--reuse-run`, `--reuse-releases`,
+`--skip`, and `--skip-to`. Reuse artifacts only when all required earlier builds
+and checks succeeded for the intended source and versions. An early build
+failure normally requires a fresh dispatch.
 
 ## Changelog
 
