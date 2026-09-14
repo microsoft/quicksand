@@ -11,6 +11,7 @@ fn request(command: &str) -> ExecutionRequest {
         command: command.into(),
         shell: "/bin/sh".into(),
         cwd: None,
+        user: None,
         timeout: 5.0,
         exclusive: false,
     }
@@ -65,6 +66,72 @@ async fn finish(mut output: mpsc::Receiver<OutputEvent>) -> (String, String, i32
 fn assert_clean(executions: &StdinExecutions, busy: &AtomicBool) {
     assert!(executions.entries.lock().unwrap().is_empty());
     assert!(!busy.load(Ordering::SeqCst));
+}
+
+#[test]
+fn requested_user_configuration_matches_legacy_and_preserves_cwd_override() {
+    let user = (
+        "root".to_string(),
+        crate::lookup_user("root").expect("root must exist in /etc/passwd"),
+    );
+    for cwd in [None, Some("src")] {
+        let mut request = request("cat");
+        request.user = Some(user.0.clone());
+        request.cwd = cwd.map(str::to_string);
+        // Inspect configured commands without spawning a privilege-changing
+        // child or modifying accounts on the host running these tests.
+        let streaming = request.build_command().unwrap();
+        let mut legacy = std::process::Command::new("/bin/sh");
+        crate::configure_user(&mut legacy, cwd, Some(&user));
+        for command in [streaming.as_std(), &legacy] {
+            assert_eq!(
+                command.get_current_dir(),
+                Some(std::path::Path::new(cwd.unwrap_or(&user.1.home)))
+            );
+            for (key, value) in [
+                ("HOME", user.1.home.as_str()),
+                ("USER", user.0.as_str()),
+                ("LOGNAME", user.0.as_str()),
+            ] {
+                let actual = command
+                    .get_envs()
+                    .find(|(name, _)| *name == key)
+                    .and_then(|(_, value)| value);
+                assert_eq!(actual, Some(std::ffi::OsStr::new(value)));
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn unknown_user_is_rejected_before_registration_or_exclusivity() {
+    let executions = StdinExecutions::default();
+    let busy = Arc::new(AtomicBool::new(false));
+    let missing_user = "quicksand-no-such-stdin-user";
+    assert!(crate::lookup_user(missing_user).is_none());
+    for already_busy in [false, true] {
+        busy.store(already_busy, Ordering::SeqCst);
+        let mut request = request("printf should-not-run");
+        request.user = Some(missing_user.into());
+        request.exclusive = true;
+        assert!(matches!(
+            executions.start(request, Arc::clone(&busy)),
+            Err(RequestError::Invalid(message)) if message == format!("No such user: {missing_user}")
+        ));
+        assert!(executions.entries.lock().unwrap().is_empty());
+        assert_eq!(busy.load(Ordering::SeqCst), already_busy);
+        assert!(write(&executions, ID, b"not registered").await);
+        assert!(!executions.cancel(ID).await);
+    }
+
+    busy.store(false, Ordering::SeqCst);
+    let mut output = executions
+        .start(request("cat >/dev/null"), Arc::clone(&busy))
+        .unwrap();
+    ready(&mut output).await;
+    assert!(eof(&executions, ID).await);
+    assert_eq!(finish(output).await, ("".into(), "".into(), 0));
+    assert_clean(&executions, &busy);
 }
 
 pub(super) async fn assert_process_stopped(pid: i32) {

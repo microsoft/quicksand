@@ -105,3 +105,17 @@ original stream while input is being supplied.
 Cancellation uses HTTP `POST /cancel` or serial method `cancel`, with the same
 `stdin_id`. The agent terminates the execution's process group and releases its
 input and exclusive-command state. Guest timeouts perform the same cleanup.
+
+## Guest user identity
+
+Both execution methods accept an optional `user`. The guest resolves the account
+before launching a command, sets `HOME`, `USER`, and `LOGNAME`, and changes to its
+home unless `cwd` is supplied. Before executing the shell, the child initializes
+supplementary groups and drops its GID and UID. This also applies to commands
+with streaming stdin; input is written to the already user-scoped child pipe.
+
+The authenticated `create_user` and `delete_user` methods (or HTTP endpoints with
+the same names) manage guest accounts. They serialize updates to the guest
+account files. Deletion stops that user's processes and optionally removes the
+home directory. Accounts share the guest kernel and filesystem; they do not
+create additional VM isolation.

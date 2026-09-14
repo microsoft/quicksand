@@ -64,6 +64,7 @@ class _MockSandbox(_MountMixin):
         on_stdout=None,
         on_stderr=None,
         exclusive=False,
+        user=None,
         *,
         stdin=None,
     ):

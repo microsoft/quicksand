@@ -11,6 +11,38 @@ use tower::ServiceExt;
 
 const ID: &str = "0123456789abcdef0123456789abcdef";
 const TOKEN: &str = "test-token";
+const MISSING_USER: &str = "quicksand-no-such-stdin-user";
+
+#[test]
+fn stdin_request_conversion_preserves_user_and_execution_options() {
+    let request: ExecuteRequest = serde_json::from_value(json!({
+        "stdin_id": ID,
+        "command": "cat",
+        "shell": "/bin/bash",
+        "cwd": "src",
+        "user": "quicksand-stream-user",
+        "timeout": 12.5,
+        "exclusive": true
+    }))
+    .unwrap();
+    let execution = request.into_stdin_execution();
+    assert_eq!(execution.stdin_id, ID);
+    assert_eq!(execution.command, "cat");
+    assert_eq!(execution.shell, "/bin/bash");
+    assert_eq!(execution.cwd.as_deref(), Some("src"));
+    assert_eq!(execution.user.as_deref(), Some("quicksand-stream-user"));
+    assert_eq!(execution.timeout, 12.5);
+    assert!(execution.exclusive);
+
+    let request: ExecuteRequest =
+        serde_json::from_value(json!({"stdin_id": ID, "command": "cat"})).unwrap();
+    let execution = request.into_stdin_execution();
+    assert_eq!(execution.shell, "/bin/sh");
+    assert!(execution.cwd.is_none());
+    assert!(execution.user.is_none());
+    assert_eq!(execution.timeout, 30.0);
+    assert!(!execution.exclusive);
+}
 
 fn state() -> AppState {
     AppState {
@@ -78,6 +110,8 @@ async fn http_capability_gating_and_control_authentication() {
         ("/stdin", json!({"stdin_id": ID, "data": ""})),
         ("/stdin", json!({"stdin_id": ID, "eof": true})),
         ("/cancel", json!({"stdin_id": ID})),
+        ("/create_user", json!({"name": "invalid:name"})),
+        ("/delete_user", json!({"name": "invalid:name"})),
     ] {
         let response = post_json(&app, path, params, false).await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -85,6 +119,56 @@ async fn http_capability_gating_and_control_authentication() {
             response_json(response).await,
             json!({"detail": "Invalid token"})
         );
+    }
+}
+
+#[tokio::test]
+async fn http_account_management_routes_remain_available() {
+    let app = http_router(state());
+    // Invalid names exercise both handlers without touching any host accounts.
+    for path in ["/create_user", "/delete_user"] {
+        let response = post_json(&app, path, json!({"name": "invalid:name"}), true).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response_json(response).await,
+            json!({"detail": "Invalid username: invalid:name"})
+        );
+    }
+}
+
+#[tokio::test]
+async fn http_unknown_users_are_rejected_before_exclusive_state_changes() {
+    assert!(lookup_user(MISSING_USER).is_none());
+    let state = state();
+    let app = http_router(state.clone());
+    for already_busy in [false, true] {
+        state.exclusive_busy.store(already_busy, Ordering::SeqCst);
+        for (path, piped) in [
+            ("/execute", false),
+            ("/execute_stream", false),
+            ("/execute_stream", true),
+        ] {
+            let mut params = json!({
+                "command": "printf should-not-run",
+                "user": MISSING_USER,
+                "exclusive": true
+            });
+            if piped {
+                params["stdin_id"] = json!(ID);
+            }
+            let response = post_json(&app, path, params, true).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(
+                response_json(response).await,
+                json!({"detail": format!("No such user: {MISSING_USER}")})
+            );
+            assert_eq!(
+                state.exclusive_busy.load(Ordering::SeqCst),
+                already_busy
+            );
+            let response = post_json(&app, "/cancel", json!({"stdin_id": ID}), true).await;
+            assert_eq!(response_json(response).await, json!({"cancelled": false}));
+        }
     }
 }
 
@@ -337,6 +421,8 @@ async fn serial_controls_require_authentication_and_legacy_execution_still_works
     for (id, method, params) in [
         (10, "stdin", json!({"stdin_id": ID, "data": ""})),
         (11, "cancel", json!({"stdin_id": ID})),
+        (15, "create_user", json!({"name": "invalid:name"})),
+        (16, "delete_user", json!({"name": "invalid:name"})),
     ] {
         serial.send(id, method, params).await;
         assert_eq!(
@@ -370,6 +456,64 @@ async fn serial_controls_require_authentication_and_legacy_execution_still_works
         serial.recv().await,
         json!({"id": 14, "stream": "exit", "exit_code": 0})
     );
+    serial.disconnect().await;
+}
+
+#[tokio::test]
+async fn serial_account_management_methods_remain_available() {
+    let serial = SerialTest::new();
+    serial.authenticate().await;
+    for (id, method) in [(2, "create_user"), (3, "delete_user")] {
+        serial.send(id, method, json!({"name": "invalid:name"})).await;
+        assert_eq!(
+            serial.recv().await,
+            json!({"id": id, "error": {"message": "Invalid username: invalid:name"}})
+        );
+    }
+    serial.disconnect().await;
+}
+
+#[tokio::test]
+async fn serial_unknown_users_are_rejected_before_exclusive_state_changes() {
+    assert!(lookup_user(MISSING_USER).is_none());
+    let serial = SerialTest::new();
+    serial.authenticate().await;
+    for already_busy in [false, true] {
+        serial.busy.store(already_busy, Ordering::SeqCst);
+        for (id, method, piped) in [
+            (2, "execute", false),
+            (3, "execute_stream", false),
+            (4, "execute_stream", true),
+        ] {
+            let mut params = json!({
+                "command": "printf should-not-run",
+                "user": MISSING_USER,
+                "exclusive": true
+            });
+            if piped {
+                params["stdin_id"] = json!(ID);
+            }
+            serial.send(id, method, params).await;
+            let message = format!("No such user: {MISSING_USER}");
+            let expected = if method == "execute" {
+                json!({"id": id, "result": {"stdout": "", "stderr": message, "exit_code": -1}})
+            } else if piped {
+                json!({"id": id, "error": {"message": message}})
+            } else {
+                json!({"id": id, "stream": "stderr", "data": format!("{message}\n")})
+            };
+            assert_eq!(serial.recv().await, expected);
+            if method == "execute_stream" {
+                assert_eq!(
+                    serial.recv().await,
+                    json!({"id": id, "stream": "exit", "exit_code": -1})
+                );
+            }
+            assert_eq!(serial.busy.load(Ordering::SeqCst), already_busy);
+            assert!(!serial.executions.cancel(ID).await);
+        }
+    }
+    serial.busy.store(false, Ordering::SeqCst);
     serial.disconnect().await;
 }
 

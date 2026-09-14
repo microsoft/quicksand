@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from quicksand_image_tools.build import (
@@ -157,13 +158,62 @@ class TestBuildImage:
         dockerfile_path = tmp_dir / "Dockerfile"
         dockerfile_path.write_text("FROM alpine:3.20\n")
 
-        # Create cached image
+        # Create cached image. The cache key covers the Dockerfile plus the
+        # agent source the build copies into the context.
         import hashlib
 
-        content_hash = hashlib.sha256(b"FROM alpine:3.20\n").hexdigest()[:16]
+        from quicksand_image_tools.build import _agent_source_hash
+
+        content_hash = hashlib.sha256(
+            b"FROM alpine:3.20\n" + _agent_source_hash().encode()
+        ).hexdigest()[:16]
         cached_image = cache_dir / f"custom-{content_hash}.qcow2"
         cached_image.touch()
 
         with patch("shutil.which", return_value="/usr/bin/docker"):
             result = build_image(dockerfile_path, cache_dir=cache_dir)
             assert result == cached_image
+
+
+@pytest.mark.parametrize(
+    ("distro", "hook_name"),
+    [("alpine", "AlpineImageBuildHook"), ("ubuntu", "UbuntuImageBuildHook")],
+)
+def test_base_image_hook_checks_existing_image_inputs(tmp_path, distro, hook_name):
+    hook_path = (
+        Path(__file__).parents[2]
+        / "packages"
+        / "contrib"
+        / f"quicksand-{distro}"
+        / "hatch_build.py"
+    )
+    spec = importlib.util.spec_from_file_location(f"{distro}_build_hook", hook_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    hook_class = getattr(module, hook_name)
+
+    package_dir = tmp_path / f"quicksand_{distro}"
+    images_dir = package_dir / "images"
+    images_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text('DISTRO_VERSION = "1.0"\n')
+    image_path = images_dir / f"{distro}-1.0-arm64.qcow2"
+    image_path.touch()
+    hook = hook_class(
+        root=str(tmp_path),
+        config={},
+        build_config=MagicMock(),
+        metadata=MagicMock(),
+        directory=str(tmp_path),
+        target_name="wheel",
+        app=MagicMock(),
+    )
+
+    with (
+        patch("quicksand_image_tools.build_utils.set_platform_wheel_tag", return_value=True),
+        patch("quicksand_image_tools.build_utils.get_image_arch", return_value="arm64"),
+        patch.object(hook, "_build_image") as build,
+    ):
+        hook.initialize("standard", {})
+
+    build.assert_called_once_with(package_dir / "docker" / "Dockerfile", image_path)

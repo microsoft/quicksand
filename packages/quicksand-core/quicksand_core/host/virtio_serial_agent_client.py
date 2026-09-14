@@ -308,6 +308,8 @@ class VirtioSerialAgentClient:
             QuicksandGuestAgentMethod.PING: "ping",
             QuicksandGuestAgentMethod.STDIN: "stdin",
             QuicksandGuestAgentMethod.CANCEL: "cancel",
+            QuicksandGuestAgentMethod.CREATE_USER: "create_user",
+            QuicksandGuestAgentMethod.DELETE_USER: "delete_user",
         }
         method_name = method_map.get(method)
         if method_name is None:

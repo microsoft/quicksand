@@ -97,6 +97,32 @@ Streaming stdin requires a guest image whose agent advertises the
 starting the command or consuming input. Update or rebuild the image with the
 new guest agent; upgrading the host Python package alone is not sufficient.
 
+## Running as separate users
+
+Create guest OS accounts when multiple workloads should have separate home
+directories and file ownership within one VM:
+
+```python
+alice = await sb.create_user("alice")
+result = await alice.execute("cat > input.txt", stdin=b"hello\n")
+print(alice.uid, alice.gid, alice.home)
+
+# Equivalent explicit user selection:
+result = await sb.execute("cat input.txt", user="alice")
+
+await sb.delete_user("alice")  # Stops the user's processes and removes its home
+```
+
+User-scoped commands run with that account's UID, GID, supplementary groups, and
+`HOME`, `USER`, and `LOGNAME`. The working directory defaults to the user's home;
+an explicit `cwd` overrides it. `SandboxUser.execute()` accepts the same stdin
+and output-streaming options as `Sandbox.execute()`.
+
+Usernames must match `[a-z_][a-z0-9_-]*` and contain at most 32 characters.
+Pass `remove_home=False` to `delete_user()` to keep the home directory. These are
+ordinary OS accounts sharing one VM, not separate VM isolation boundaries.
+Creating users requires an image containing the updated guest agent.
+
 ## Multi-step workflows
 
 Commands run in independent shell sessions. There's no persistent shell state between calls. Use `&&` to chain commands, or write a script.

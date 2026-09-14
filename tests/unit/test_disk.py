@@ -54,6 +54,7 @@ class _MockSandbox(_LifecycleMixin):
         on_stdout=None,
         on_stderr=None,
         exclusive=False,
+        user=None,
         *,
         stdin=None,
     ):

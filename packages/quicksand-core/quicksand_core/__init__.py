@@ -52,7 +52,7 @@ from .qemu.platform import (
     get_runtime,
     is_runtime_available,
 )
-from .sandbox import ExecuteResult, Sandbox, SandboxConfig, SandboxConfigParams
+from .sandbox import ExecuteResult, Sandbox, SandboxConfig, SandboxConfigParams, SandboxUser
 
 __all__ = [  # noqa: RUF022
     # Types module alias
@@ -66,6 +66,7 @@ __all__ = [  # noqa: RUF022
     "MountType",
     "PortForward",
     "ExecuteResult",
+    "SandboxUser",
     # Boot timing
     "BootTiming",
     # Save

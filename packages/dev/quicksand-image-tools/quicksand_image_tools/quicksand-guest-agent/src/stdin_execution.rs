@@ -53,8 +53,26 @@ pub struct ExecutionRequest {
     pub command: String,
     pub shell: String,
     pub cwd: Option<String>,
+    pub user: Option<String>,
     pub timeout: f64,
     pub exclusive: bool,
+}
+
+impl ExecutionRequest {
+    fn build_command(&self) -> Result<Command, RequestError> {
+        let user_pw = crate::resolve_user(&self.user).map_err(RequestError::Invalid)?;
+        let mut command = Command::new(&self.shell);
+        command
+            .arg("-c")
+            .arg(&self.command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0)
+            .kill_on_drop(true);
+        crate::configure_user(command.as_std_mut(), self.cwd.as_deref(), user_pw.as_ref());
+        Ok(command)
+    }
 }
 
 #[derive(Deserialize)]
@@ -178,6 +196,9 @@ impl StdinExecutions {
         let deadline = Instant::now()
             .checked_add(duration)
             .ok_or_else(|| RequestError::Invalid("timeout is too large".into()))?;
+        // Resolve and configure the requested user before reserving an ID or
+        // claiming exclusivity; an unknown user must never start a child.
+        let command = request.build_command()?;
 
         let mut entries = self.entries.lock().expect("stdin registry poisoned");
         if entries.contains_key(&request.stdin_id) {
@@ -207,7 +228,8 @@ impl StdinExecutions {
 
         let (output_tx, output_rx) = mpsc::channel(16);
         tokio::spawn(run(
-            request,
+            command,
+            request.timeout,
             deadline,
             input_rx,
             cancel_rx,
@@ -397,7 +419,8 @@ enum Outcome {
 }
 
 async fn run(
-    request: ExecutionRequest,
+    mut command: Command,
+    timeout_seconds: f64,
     deadline: Instant,
     input: mpsc::Receiver<InputWrite>,
     mut cancel: watch::Receiver<bool>,
@@ -412,18 +435,6 @@ async fn run(
         } else if *cancel.borrow() {
             Outcome::Failed("Command cancelled".into())
         } else {
-            let mut command = Command::new(&request.shell);
-            command
-                .arg("-c")
-                .arg(&request.command)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .process_group(0)
-                .kill_on_drop(true);
-            if let Some(cwd) = &request.cwd {
-                command.current_dir(cwd);
-            }
             match command.spawn() {
                 Err(error) => Outcome::Failed(format!("Failed to start command: {error}")),
                 Ok(child) => {
@@ -436,7 +447,7 @@ async fn run(
                         }
                         _ = output.closed() => Outcome::Disconnected,
                         _ = sleep_until(deadline) => {
-                            Outcome::Failed(format!("Command timed out after {} seconds", request.timeout))
+                            Outcome::Failed(format!("Command timed out after {} seconds", timeout_seconds))
                         }
                         result = drive(&mut process, input_requests, input_closed, &output) => {
                             match result {

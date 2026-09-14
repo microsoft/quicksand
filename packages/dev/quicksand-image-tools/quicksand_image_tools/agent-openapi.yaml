@@ -87,6 +87,40 @@ components:
           type: boolean
           default: false
           description: Reject other execution requests while this command runs
+        user:
+          type: string
+          nullable: true
+          description: |
+            Existing guest OS account to run as, using its UID, GID,
+            supplementary groups, HOME, USER, and LOGNAME. When cwd is omitted,
+            it defaults to this user's home. Applies to both execution methods,
+            including stdin-enabled execution.
+
+    UserRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z_][a-z0-9_-]*$'
+          maxLength: 32
+        remove_home:
+          type: boolean
+          default: false
+          description: |
+            Used by delete_user. The Python API defaults this to true and sends
+            it explicitly; the wire default when omitted is false.
+
+    UserCreatedResponse:
+      type: object
+      required: [uid, gid, home]
+      properties:
+        uid:
+          type: integer
+        gid:
+          type: integer
+        home:
+          type: string
 
     StdinId:
       type: string
@@ -423,6 +457,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /create_user:
+    post:
+      summary: Create a guest OS account with a private home directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRequest'
+      responses:
+        '200':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCreatedResponse'
+        '400':
+          description: Invalid or existing username, or account creation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid or missing token
+
+  /delete_user:
+    post:
+      summary: Stop a guest user's processes and remove the account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRequest'
+      responses:
+        '200':
+          description: Account removed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed]
+                properties:
+                  removed:
+                    type: boolean
+                    const: true
+        '400':
+          description: Invalid or missing username, or account deletion failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid or missing token
 
   /ping:
     get:

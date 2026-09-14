@@ -176,3 +176,62 @@ async def test_stdin_timeout_releases_exclusive_command(stdin_sandbox):
     result = await stdin_sandbox.execute("printf available")
     assert result.exit_code == 0, result.stderr
     assert result.stdout == "available"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_stdin_runs_as_sandbox_user(stdin_sandbox):
+    user = await stdin_sandbox.create_user("stdin_alice")
+    try:
+
+        async def chunks():
+            yield b"owned by "
+            yield b"alice"
+
+        result = await user.execute(
+            "id -u; id -g; id -G;"
+            ' printf \'%s\\n\' "$HOME" "$USER" "$LOGNAME" "$PWD";'
+            " cat > payload; cat payload",
+            stdin=chunks(),
+        )
+        assert result.exit_code == 0, result.stderr
+        lines = result.stdout.splitlines()
+        assert lines[:2] == [str(user.uid), str(user.gid)]
+        assert str(user.gid) in lines[2].split()
+        assert lines[3:] == [user.home, user.name, user.name, user.home, "owned by alice"]
+        result = await stdin_sandbox.execute(f"stat -c '%u:%g' {user.home}/payload")
+        assert result.exit_code == 0, result.stderr
+        assert result.stdout.strip() == f"{user.uid}:{user.gid}"
+
+        result = await stdin_sandbox.execute(
+            'printf "%s\\n" "$PWD"; cat',
+            user=user.name,
+            cwd="/tmp",
+            stdin=b"explicit cwd",
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.stdout == "/tmp\nexplicit cwd"
+    finally:
+        await stdin_sandbox.delete_user(user.name)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_stdin_unknown_user_does_not_start_or_claim_exclusivity(stdin_sandbox):
+    produced = []
+
+    async def chunks():
+        produced.append(True)
+        yield b"unused"
+
+    result = await stdin_sandbox.execute(
+        "touch /tmp/quicksand-invalid-stdin-user",
+        user="quicksand_missing_user",
+        stdin=chunks(),
+        exclusive=True,
+    )
+    assert result.exit_code == -1
+    assert result.stderr
+    assert not produced
+    result = await stdin_sandbox.execute("test ! -e /tmp/quicksand-invalid-stdin-user")
+    assert result.exit_code == 0, result.stderr

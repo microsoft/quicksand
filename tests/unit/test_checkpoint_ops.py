@@ -206,6 +206,7 @@ class TestHotSave:
                 on_stdout=None,
                 on_stderr=None,
                 exclusive=False,
+                user=None,
                 *,
                 stdin=None,
             ):
@@ -374,6 +375,7 @@ class TestCheckpointRevert:
                 on_stdout=None,
                 on_stderr=None,
                 exclusive=False,
+                user=None,
                 *,
                 stdin=None,
             ):
