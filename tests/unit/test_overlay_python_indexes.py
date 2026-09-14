@@ -37,7 +37,7 @@ async def test_python_install_preserves_default_behavior_without_indexes():
 
 
 @pytest.mark.asyncio
-async def test_python_install_passes_only_index_settings_without_logging_urls(monkeypatch):
+async def test_python_install_passes_only_index_settings_through_stdin(monkeypatch):
     indexes = {
         "PIP_INDEX_URL": "https://example-user:example-password@mirror.invalid/simple/",
         "PIP_EXTRA_INDEX_URL": "https://extra.invalid/simple/",

@@ -33,7 +33,7 @@ async def run_python_install(
     """Run a Python installer in a Unix guest using the host's package indexes.
 
     The guest needs Python 3 and a stdin-capable agent. Index settings apply only
-    to this command; they are not saved in the image or included in command logs.
+    to this command and travel over stdin, not command arguments or guest config.
     """
     index_env = {name: os.environ[name] for name in _PYTHON_INDEX_VARIABLES if name in os.environ}
     if not index_env:
