@@ -30,6 +30,12 @@ mount -t cifs //10.0.2.100/QUICKSAND0 /mnt/code \
 
 `nosharesock` forces a dedicated TCP connection per mount. Without it, a mount/unmount/mount cycle wedges because the kernel CIFS client tries to resume a session the server already closed.
 
+For the bundled SMB server, Quicksand also appends `nobrl`: SMB byte-range locks
+are not implemented, so the guest kernel handles locking locally instead.
+This applies to both boot-time and hot mounts. Locks do not coordinate access
+with the host or other mounts/sandboxes. Servers that support byte-range locks,
+such as the optional native SMB backend, retain server-side locking.
+
 Each mount gets its own SMB share name (`QUICKSAND0`, `QUICKSAND1`, ...). The SMB server maps each share name to the corresponding host directory.
 
 ## Hot-mounts

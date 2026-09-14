@@ -15,6 +15,7 @@ from .._types import (
     ExecuteResult,
     GuestCommands,
     QuicksandGuestAgentMethod,
+    StdinSource,
     Timeouts,
 )
 from ._protocol import _SandboxProtocol
@@ -37,6 +38,8 @@ class _ExecutionMixin(_SandboxProtocol):
         on_stderr: Callable[[str], None] | None = None,
         exclusive: bool = False,
         user: str | None = None,
+        *,
+        stdin: StdinSource | None = None,
     ) -> ExecuteResult:
         """
         Execute a shell command inside the sandbox.
@@ -49,10 +52,10 @@ class _ExecutionMixin(_SandboxProtocol):
                    Common options: /bin/sh, /bin/bash, /bin/zsh
             on_stdout: Optional callback invoked with each chunk of stdout
                        as it arrives. When provided, the command is executed
-                       in streaming mode via SSE.
+                       in streaming mode over the active agent transport.
             on_stderr: Optional callback invoked with each chunk of stderr
                        as it arrives. When provided, the command is executed
-                       in streaming mode via SSE.
+                       in streaming mode over the active agent transport.
             exclusive: If True, the guest agent will reject other requests
                        while this command is running. Used for system commands
                        like sync/fstrim that need exclusive access.
@@ -61,6 +64,10 @@ class _ExecutionMixin(_SandboxProtocol):
                   the user's home directory. The user must already exist (see
                   ``create_user``). Prefer obtaining a ``SandboxUser`` via
                   ``create_user`` and calling ``.execute()`` on it.
+            stdin: Input bytes, a UTF-8 string, or an async iterable of byte
+                   chunks. Iterable exhaustion closes stdin. Input is consumed
+                   incrementally and stops when the command exits. Requires
+                   an image with a stdin-capable guest agent.
 
         Returns:
             ExecuteResult with stdout, stderr, and exit_code.
@@ -73,7 +80,7 @@ class _ExecutionMixin(_SandboxProtocol):
         )
         params_dict = {k: v for k, v in asdict(params).items() if v is not None}
 
-        if on_stdout is not None or on_stderr is not None:
+        if stdin is not None or on_stdout is not None or on_stderr is not None:
             client = self._agent_client
             if client is None:
                 raise RuntimeError("Not connected to guest agent")
@@ -82,6 +89,7 @@ class _ExecutionMixin(_SandboxProtocol):
                 timeout=timeout + 5,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
+                stdin=stdin,
             )
         else:
             response = await self._send_request(
@@ -186,6 +194,8 @@ class SandboxUser:
         on_stdout: Callable[[str], None] | None = None,
         on_stderr: Callable[[str], None] | None = None,
         exclusive: bool = False,
+        *,
+        stdin: StdinSource | None = None,
     ) -> ExecuteResult:
         """Execute a command as this user. See :meth:`Sandbox.execute`."""
         return await self._sandbox.execute(
@@ -197,6 +207,7 @@ class SandboxUser:
             on_stderr=on_stderr,
             exclusive=exclusive,
             user=self.name,
+            stdin=stdin,
         )
 
     def __repr__(self) -> str:

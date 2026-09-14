@@ -207,6 +207,8 @@ class TestHotSave:
                 on_stderr=None,
                 exclusive=False,
                 user=None,
+                *,
+                stdin=None,
             ):
                 return MagicMock(stdout="", stderr="", exit_code=0)
 
@@ -374,6 +376,8 @@ class TestCheckpointRevert:
                 on_stderr=None,
                 exclusive=False,
                 user=None,
+                *,
+                stdin=None,
             ):
                 return MagicMock(stdout="", stderr="", exit_code=0)
 

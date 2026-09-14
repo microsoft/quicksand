@@ -47,3 +47,14 @@ async def test_my_feature(tmp_dir):
 | `@pytest.mark.docker` | Test needs Docker daemon |
 
 Skip conditions (`skip_no_qemu`, `skip_no_docker`, `skip_no_mke2fs`) are in `tests/conftest.py`.
+
+## Streaming stdin integration
+
+The stdin integration tests exercise both virtio-serial and HTTP. They require
+an image rebuilt with a guest agent that advertises `stdin_streaming`; older
+images skip these cases. To use a local save containing the updated agent:
+
+```bash
+QUICKSAND_STDIN_TEST_IMAGE=/path/to/updated-save \
+  uv run pytest tests/integration/execution/test_stdin.py -v
+```

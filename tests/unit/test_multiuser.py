@@ -98,3 +98,32 @@ async def test_delete_user_routes_with_remove_home():
     method, params, *_ = send.call_args.args
     assert method == QuicksandGuestAgentMethod.DELETE_USER
     assert params == {"name": "alice", "remove_home": False}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_handle", [False, True])
+async def test_streaming_stdin_preserves_target_user(use_handle):
+    sb = _running_sandbox(AsyncMock())
+    client = AsyncMock()
+    client.send_stream_request.return_value = {
+        "result": {"stdout": "input", "stderr": "", "exit_code": 0}
+    }
+    sb._agent_client = client
+
+    async def chunks():
+        yield b"input"
+
+    source = chunks()
+    callback = MagicMock()
+    if use_handle:
+        user = SandboxUser(sb, "alice", uid=1000, gid=1000, home="/home/alice")
+        result = await user.execute("cat", stdin=source, on_stdout=callback)
+    else:
+        result = await sb.execute("cat", user="alice", stdin=source, on_stdout=callback)
+
+    assert result.stdout == "input"
+    call = client.send_stream_request.await_args
+    assert call is not None
+    assert call.args[0]["user"] == "alice"
+    assert call.kwargs["stdin"] is source
+    assert call.kwargs["on_stdout"] is callback

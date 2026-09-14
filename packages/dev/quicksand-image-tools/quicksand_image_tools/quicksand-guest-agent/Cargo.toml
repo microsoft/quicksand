@@ -7,7 +7,7 @@ license = "MIT"
 
 [dependencies]
 # Async runtime - multi-threaded for concurrent request handling
-tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "process", "time", "fs", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "process", "time", "fs", "macros", "sync"] }
 
 # HTTP server - lightweight
 axum = { version = "0.7", default-features = false, features = ["json", "tokio", "http1"] }
@@ -15,6 +15,7 @@ axum = { version = "0.7", default-features = false, features = ["json", "tokio",
 # JSON serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+base64 = "0.22"
 
 # SSE streaming support
 tokio-stream = "0.1"
@@ -26,6 +27,9 @@ tokio-stream = "0.1"
 # Also used for privilege drop (setuid/setgid/initgroups) and chown/kill in
 # multi-user mode.
 libc = "0.2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 opt-level = "z"     # Optimize for size
