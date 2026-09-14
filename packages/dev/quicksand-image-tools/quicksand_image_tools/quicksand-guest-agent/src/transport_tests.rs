@@ -91,6 +91,33 @@ async fn wait_until_idle(busy: &AtomicBool) {
     .expect("exclusive state was not released");
 }
 
+struct CommandSideEffect {
+    path: std::path::PathBuf,
+}
+
+impl CommandSideEffect {
+    fn new(name: &str) -> Self {
+        fs::create_dir_all("target").unwrap();
+        let path = std::path::Path::new("target")
+            .join(format!("auth-boundary-{name}-{}", std::process::id()));
+        assert!(!path.exists(), "side-effect witness already exists");
+        Self { path }
+    }
+
+    fn command(&self) -> String {
+        format!(
+            "printf started > '{}' && cat >/dev/null && printf done",
+            self.path.display()
+        )
+    }
+}
+
+impl Drop for CommandSideEffect {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 #[tokio::test]
 async fn http_capability_gating_and_control_authentication() {
     let app = http_router(state());
@@ -120,6 +147,82 @@ async fn http_capability_gating_and_control_authentication() {
             json!({"detail": "Invalid token"})
         );
     }
+}
+
+#[tokio::test]
+async fn http_stdin_execution_requires_authentication_before_start() {
+    let state = state();
+    let app = http_router(state.clone());
+    let denied = CommandSideEffect::new("http-denied");
+    let allowed = CommandSideEffect::new("http-allowed");
+    let params = json!({
+        "stdin_id": ID,
+        "command": denied.command(),
+        "exclusive": true
+    });
+    for authorization in [None, Some("Bearer wrong-token")] {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/execute_stream")
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(authorization) = authorization {
+            request = request.header(header::AUTHORIZATION, authorization);
+        }
+        let response = app
+            .clone()
+            .oneshot(request.body(Body::from(params.to_string())).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        assert!(!state.exclusive_busy.load(Ordering::SeqCst));
+        state.stdin_executions.assert_no_registrations();
+        assert!(!denied.path.exists());
+        assert_eq!(
+            response_json(response).await,
+            json!({"detail": "Invalid token"})
+        );
+    }
+
+    // Reuse the rejected ID and actually exchange stdin after authenticating.
+    let response = post_json(
+        &app,
+        "/execute_stream",
+        json!({"stdin_id": ID, "command": allowed.command(), "exclusive": true}),
+        true,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(state.exclusive_busy.load(Ordering::SeqCst));
+    let mut output = response.into_body().into_data_stream();
+    assert_eq!(sse_next(&mut output).await, json!({"stream": "ready"}));
+    let response = post_json(
+        &app,
+        "/stdin",
+        json!({"stdin_id": ID, "data": STANDARD.encode(b"authenticated input")}),
+        true,
+    )
+    .await;
+    assert_eq!(response_json(response).await, json!({"closed": false}));
+    let response = post_json(&app, "/stdin", json!({"stdin_id": ID, "eof": true}), true).await;
+    assert_eq!(response_json(response).await, json!({"closed": true}));
+    let mut stdout = String::new();
+    loop {
+        let event = sse_next(&mut output).await;
+        match event["stream"].as_str().unwrap() {
+            "stdout" => stdout.push_str(event["data"].as_str().unwrap()),
+            "exit" => {
+                assert_eq!(event["exit_code"], 0);
+                break;
+            }
+            stream => panic!("unexpected stream {stream}: {event}"),
+        }
+    }
+    assert_eq!(stdout, "done");
+    assert_eq!(fs::read_to_string(&allowed.path).unwrap(), "started");
+    assert!(!denied.path.exists());
+    assert!(!state.exclusive_busy.load(Ordering::SeqCst));
+    state.stdin_executions.assert_no_registrations();
 }
 
 #[tokio::test]
@@ -456,6 +559,87 @@ async fn serial_controls_require_authentication_and_legacy_execution_still_works
         serial.recv().await,
         json!({"id": 14, "stream": "exit", "exit_code": 0})
     );
+    serial.disconnect().await;
+}
+
+#[tokio::test]
+async fn serial_stdin_execution_requires_authentication_before_start() {
+    let serial = SerialTest::new();
+    let denied = CommandSideEffect::new("serial-denied");
+    let allowed = CommandSideEffect::new("serial-allowed");
+    for (id, token) in [(2, None), (4, Some("wrong-token"))] {
+        if let Some(token) = token {
+            serial.send(3, "authenticate", json!({"token": token})).await;
+            assert_eq!(
+                serial.recv().await,
+                json!({"id": 3, "result": {"authenticated": false}})
+            );
+        }
+        serial
+            .send(
+                id,
+                "execute_stream",
+                json!({"stdin_id": ID, "command": denied.command(), "exclusive": true}),
+            )
+            .await;
+        assert_eq!(
+            serial.recv().await,
+            json!({"id": id, "error": {"message": "Not authenticated"}})
+        );
+        assert!(!serial.busy.load(Ordering::SeqCst));
+        serial.executions.assert_no_registrations();
+        assert!(!denied.path.exists());
+    }
+
+    serial.authenticate().await;
+    serial
+        .send(
+            5,
+            "execute_stream",
+            json!({"stdin_id": ID, "command": allowed.command(), "exclusive": true}),
+        )
+        .await;
+    assert_eq!(serial.recv().await, json!({"id": 5, "stream": "ready"}));
+    assert!(serial.busy.load(Ordering::SeqCst));
+    serial
+        .send(
+            6,
+            "stdin",
+            json!({"stdin_id": ID, "data": STANDARD.encode(b"authenticated input")}),
+        )
+        .await;
+    assert_eq!(
+        serial.recv().await,
+        json!({"id": 6, "result": {"closed": false}})
+    );
+    serial
+        .send(7, "stdin", json!({"stdin_id": ID, "eof": true}))
+        .await;
+    let mut eof_ack = false;
+    let mut exited = false;
+    let mut stdout = String::new();
+    while !eof_ack || !exited {
+        let frame = serial.recv().await;
+        if frame["id"] == 7 {
+            assert_eq!(frame, json!({"id": 7, "result": {"closed": true}}));
+            eof_ack = true;
+        } else {
+            assert_eq!(frame["id"], 5);
+            match frame["stream"].as_str().unwrap() {
+                "stdout" => stdout.push_str(frame["data"].as_str().unwrap()),
+                "exit" => {
+                    assert_eq!(frame["exit_code"], 0);
+                    exited = true;
+                }
+                stream => panic!("unexpected stream {stream}: {frame}"),
+            }
+        }
+    }
+    assert_eq!(stdout, "done");
+    assert_eq!(fs::read_to_string(&allowed.path).unwrap(), "started");
+    assert!(!denied.path.exists());
+    assert!(!serial.busy.load(Ordering::SeqCst));
+    serial.executions.assert_no_registrations();
     serial.disconnect().await;
 }
 
