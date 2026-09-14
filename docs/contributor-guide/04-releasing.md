@@ -35,9 +35,10 @@ runner. Set `AZURE_SUBSCRIPTION_ID` to the intended subscription before running
 `uv run quicksand-runners start`; this command manages Azure VMs, not the macOS
 runner.
 
-Build jobs install `quick-sandbox` and its extras rather than the entire
-workspace. Azure runner-management dependencies are not needed to build wheels
-and are intentionally excluded from this bootstrap environment.
+Build jobs use uv 0.12.13 and install `quick-sandbox`, its extras, and the explicit
+`dev` group containing the release CLI. Azure runner-management dependencies are
+not needed to build wheels and are intentionally excluded from this bootstrap
+environment.
 
 Agent and CUA overlay Python installs inherit the host's `PIP_INDEX_URL`,
 `PIP_EXTRA_INDEX_URL`, `UV_DEFAULT_INDEX`, `UV_INDEX_URL`, and

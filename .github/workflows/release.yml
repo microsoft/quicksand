@@ -92,6 +92,7 @@ jobs:
       with:
         enable-cache: false
         python-version: ${{ fromJSON(inputs.plan).python_version }}
+        version: "0.12.13"
 
     - id: build
       name: Build packages
@@ -102,7 +103,7 @@ jobs:
         QUICKSAND_AUTO_INSTALL: "1"
       run: |
         uv venv --seed --clear
-        uv sync --package quick-sandbox --all-extras
+        uv sync --package quick-sandbox --all-extras --group dev
         git restore uv.lock
         uv run --no-sync uvr jobs build
     - id: upload
