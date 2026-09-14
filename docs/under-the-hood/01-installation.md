@@ -24,9 +24,11 @@ The `-L` flag tells QEMU where to find firmware and keymap files. Without it, QE
 
 If the bundled package isn't installed, Quicksand falls back to system QEMU found on `PATH`.
 
-### Windows ARM64 and fat wheels
+### Windows ARM64 and interpreter architecture
 
-On Windows ARM64, most users run x86_64 Python through Microsoft's transparent emulation layer. The user may not even know they're running emulated Python — it's the default. This creates a conflict:
+quicksand-qemu 0.5.12 packages are single-architecture wheels: `win_amd64` contains x86_64
+executables and `win_arm64` contains ARM64 executables, directly in `bin/`.
+Windows ARM64 can run x86_64 Python through emulation, which affects wheel selection:
 
 | | Python arch | pip accepts | QEMU needed |
 |---|---|---|---|
@@ -36,31 +38,15 @@ On Windows ARM64, most users run x86_64 Python through Microsoft's transparent e
 
 The third row is the problem. pip's wheel compatibility tags (PEP 425) match the Python interpreter's platform, not the hardware. An emulated x86_64 Python will only install `win_amd64` wheels — but the machine needs ARM64 QEMU binaries for hardware acceleration (WHPX).
 
-This problem is unique to Windows. Linux doesn't transparently emulate x86_64 on ARM64, and macOS users on Apple Silicon install ARM64 Python by default (Rosetta 2 exists but isn't the default Python experience).
+Use native ARM64 Python on Windows ARM64 so pip selects the ARM64 QEMU and image
+wheels. `quicksand install` delegates to pip; it does not override the
+interpreter's platform tags. Installing a single-architecture x64 QEMU wheel
+under emulated Python can produce an architecture-mismatch error at runtime.
 
-**Our solution: fat `win_amd64` wheels.** The `win_amd64` quicksand-qemu wheel ships both x86_64 and ARM64 QEMU binaries:
-
-```
-quicksand_qemu/bin/
-├── x86_64/                       # x86_64 QEMU binaries
-│   ├── qemu-system-x86_64.exe
-│   ├── qemu-img.exe
-│   └── ...
-└── arm64/                        # ARM64 QEMU binaries
-    ├── qemu-system-aarch64.exe
-    ├── qemu-img.exe
-    └── ...
-```
-
-At runtime, `_find_bundled_runtime()` reads the native CPU architecture from the Windows Registry (`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\PROCESSOR_ARCHITECTURE`) — this always reports the true hardware regardless of process emulation — and selects the matching subdirectory. On a single-arch wheel (Linux, macOS, or `win_arm64`), binaries live directly in `bin/` with no subdirectories.
-
-**Build pipeline:**
-1. The Windows x64 CI runner builds `win_amd64.whl` with x64 QEMU in `bin/`
-2. The GitHub-hosted `windows-11-arm` runner builds `win_arm64.whl` with ARM64 QEMU in `bin/`
-3. A `pre_release` hook (runs after all builds, before publishing) opens the `win_amd64` wheel, moves its binaries to `bin/x86_64/`, extracts ARM64 binaries from the `win_arm64` wheel into `bin/arm64/`, and rewrites the wheel
-4. The `win_arm64` wheel ships unchanged (lean, single-arch) for the rare native ARM64 Python user
-
-This approach doubles the `win_amd64` wheel size (~44 MB → ~80 MB) but ensures `pip install quicksand-qemu` delivers hardware-accelerated QEMU on every Windows configuration without user intervention.
+The current pipeline publishes both Windows wheels without merging them.
+`_find_bundled_runtime()` still supports legacy combined wheels with
+`bin/x86_64/` and `bin/arm64/` subdirectories, selecting by native hardware
+architecture. That is backward compatibility, not the layout of the current release.
 
 ### Platform wheel matrix
 
@@ -68,17 +54,19 @@ This approach doubles the `win_amd64` wheel size (~44 MB → ~80 MB) but ensures
 
 quicksand-qemu is in `_SKIP` — never retagged. Each runner produces exactly one wheel.
 
-| Runner | QEMU Binary | Wheel Tag | After `pre_release` merge |
-|--------|-------------|-----------|--------------------------|
-| `[linux, x64]` | qemu-system-x86_64 (Linux) | `manylinux_<major>_<minor>_x86_64` | unchanged |
-| `[linux, arm64]` | qemu-system-aarch64 (Linux) | `manylinux_<major>_<minor>_aarch64` | unchanged |
-| `[macos, arm64]` | qemu-system-aarch64 (macOS) | `macosx_11_0_arm64` | unchanged |
-| `[windows, x64]` | qemu-system-x86_64.exe | `win_amd64` | → **fat**: x64 in `bin/x86_64/`, arm64 in `bin/arm64/` |
-| `windows-11-arm` | qemu-system-aarch64.exe | `win_arm64` ¹ | unchanged (consumed by merge into fat wheel) |
+| Runner | QEMU Binary | Wheel Tag |
+|--------|-------------|-----------|
+| `[linux, x64]` | qemu-system-x86_64 (Linux) | `manylinux_<major>_<minor>_x86_64` |
+| `[linux, arm64]` | qemu-system-aarch64 (Linux) | `manylinux_<major>_<minor>_aarch64` |
+| `[macos, arm64]` | qemu-system-aarch64 (macOS) | `macosx_11_0_arm64` |
+| `[windows, x64]` | qemu-system-x86_64.exe | `win_amd64` |
+| `windows-11-arm` | qemu-system-aarch64.exe | `win_arm64` ¹ |
 
 Linux manylinux versions are derived from versioned symbols in the bundled ELF
 binaries and libraries. They are not fixed at glibc 2.17; pip selects a wheel
 compatible with the host's glibc version.
+The published quicksand-qemu 0.5.12 Linux wheels require glibc 2.38 or newer.
+On older systems, use a compatible system QEMU instead.
 
 With quicksand-build-tools 0.6.0, custom Linux build hooks must pass the bundled
 binary directory as `bin_dir` to `BinaryBundler.set_platform_wheel_tag()` and
@@ -89,14 +77,13 @@ applications using `Sandbox` do not need to change their build configuration.
 
 #### Image wheels (ubuntu, alpine, etc.): build runners → retag
 
-Image wheels contain qcow2 files that are cross-platform. Retag runs only on `RETAG_RUNNERS`.
+Image wheels contain architecture-specific VM data that is portable across host
+operating systems. Retag runs only on `RETAG_RUNNERS`; these are the two image builders.
 
 | Runner | Builds | Retag produces |
 |--------|--------|----------------|
-| `[linux, x64]` | `linux_x86_64` | + `macosx_10_13_x86_64`, `win_amd64` |
-| `[macos, arm64]` | `macosx_11_0_arm64` | + `linux_aarch64`, `win_arm64` |
-| `[linux, arm64]` | `linux_aarch64` | none (not in `RETAG_RUNNERS`) |
-| `[windows, *]` | — | not an image builder |
+| `[linux, x64]` | `manylinux_2_17_x86_64` | + `macosx_10_13_x86_64`, `win_amd64` |
+| `[macos, arm64]` | `macosx_11_0_arm64` | + `manylinux_2_17_aarch64`, `win_arm64` |
 
 #### quicksand-qemu: host → pip install
 
@@ -107,14 +94,15 @@ Image wheels contain qcow2 files that are cross-platform. Retag runs only on `RE
 | macOS Intel | x86_64 | x86_64 | — (no wheel) | system QEMU (Homebrew) | HVF ✅ |
 | macOS Apple Silicon | arm64 | arm64 | `macosx_11_0_arm64` | qemu-system-aarch64 | HVF ✅ |
 | macOS Rosetta | arm64 | x86_64 | — (no wheel) | system QEMU (Homebrew) | TCG ❌ |
-| Windows | x86_64 | x86_64 | `win_amd64` (fat) | picks `bin/x86_64/` | WHPX ✅ |
-| Windows | arm64 | x86_64 (emulated) | `win_amd64` (fat) | picks `bin/arm64/` | WHPX ✅ |
+| Windows | x86_64 | x86_64 | `win_amd64` | qemu-system-x86_64 | WHPX ✅ |
+| Windows | arm64 | x86_64 (emulated) | `win_amd64` | architecture mismatch; use native Python | — |
 | Windows | arm64 | arm64 (native) | `win_arm64` | qemu-system-aarch64 | WHPX ✅ |
 
 **Notes:**
 - **No macOS x86_64 runner** — macOS Intel users fall back to system QEMU via Homebrew.
 - **Rosetta Python** — rare; gets no bundled wheel, falls back to system QEMU with software emulation (TCG).
-- **Fat wheel** — only `win_amd64` is fat (~2x size). All other wheels are single-arch.
+- **Acceleration** — requires support in both the host and QEMU build. The table lists the preferred accelerator, not a guarantee that it is available on every host.
+- **Single-architecture wheels** — all current QEMU wheels contain one architecture. Large image wheels also use the term "fat", but that means they carry VM image data rather than being a small PyPI stub.
 
 ## `quicksand install ubuntu`
 

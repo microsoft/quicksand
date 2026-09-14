@@ -6,7 +6,15 @@
 
 ![Quicksand](docs/banner-light.png)
 
-Quicksand is an async Python API to launch, control, and snapshot [QEMU](https://www.qemu.org) virtual machines with a particular focus on sandboxing AI agents. Quicksand provides pre-built Linux VMs for Ubuntu and Alpine distros. It works on x86_64 and ARM64 across macOS, Linux, and Windows with no root privileges, no Docker, and no system dependencies. Just `pip install quick-sandbox`.
+Quicksand is an async Python API to launch, control, and snapshot [QEMU](https://www.qemu.org) virtual machines with a particular focus on sandboxing AI agents. Quicksand provides pre-built Linux VMs for Ubuntu and Alpine distros and supports x86_64 and ARM64 across macOS, Linux, and Windows. Running sandboxes needs no root privileges or Docker; install the QEMU and image extras for a bundled runtime on supported platforms.
+
+## Recent releases
+
+- 🚀 **2026-09-14 — [quick-sandbox 0.12.0](https://pypi.org/project/quick-sandbox/0.12.0/):** Streaming `stdin`, guest-user accounts, and guest-local `flock`/SQLite locking. Includes refreshed Ubuntu and Alpine images; upgrade your images alongside the host package.
+- 🏔️ **2026-09-09 — [quicksand-alpine 0.9.12](https://pypi.org/project/quicksand-alpine/0.9.12/):** Rebuilt Alpine 3.23 images across the supported platforms and corrected the minimal-image package documentation.
+- 🪟 **2026-07-07 — [quick-sandbox 0.11.15](https://pypi.org/project/quick-sandbox/0.11.15/):** Windows file sharing without Administrator rights. Also fixes CIFS remount hangs and adds a loopback TCP transport for the guest agent on Windows.
+
+See the [changelog](https://github.com/microsoft/quicksand/blob/main/CHANGELOG.md) for the full release history.
 
 ## Installation
 
@@ -143,12 +151,15 @@ Sandbox(
 
 | Image | Type | Wheel size | Install command | What is it |
 |-------|------|-----------|-----------------|------------|
-| `ubuntu` | Base | ~341 MB | `quicksand install ubuntu` | Ubuntu 24.04 headless |
-| `alpine` | Base | ~78 MB | `quicksand install alpine` | Alpine 3.23 headless (faster boot) |
-| `ubuntu-desktop` | Overlay (`ubuntu`) | ~263 MB | `quicksand install ubuntu-desktop` | Ubuntu 24.04 + Xfce4 + Firefox |
-| `alpine-desktop` | Overlay (`alpine`) | ~310 MB | `quicksand install alpine-desktop` | Alpine 3.23 + Xfce4 + Chromium |
-| `quicksand-agent` | Overlay (`ubuntu`) | ~304 MB | `quicksand install quicksand-agent` | Ubuntu + Python 3.12, uv, build-essential, requests, pyyaml, ddgs, markitdown |
-| `quicksand-cua` | Overlay (`quicksand-agent`) | ~445 MB | `quicksand install quicksand-cua` | Agent Sandbox + Xvfb, x11vnc, noVNC, Playwright, Chromium |
+| `ubuntu` | Base | ~309-357 MB | `quicksand install ubuntu` | Ubuntu 24.04 headless |
+| `alpine` | Base | ~82-85 MB | `quicksand install alpine` | Alpine 3.23 headless (faster boot) |
+| `ubuntu-desktop` | Overlay (`ubuntu`) | ~273-281 MB | `quicksand install ubuntu-desktop` | Ubuntu 24.04 + Xfce4 + Firefox |
+| `alpine-desktop` | Overlay (`alpine`) | ~346-363 MB | `quicksand install alpine-desktop` | Alpine 3.23 + Xfce4 + Chromium |
+| `quicksand-agent` | Overlay (`ubuntu`) | ~306-335 MB | `quicksand install quicksand-agent` | Ubuntu + Python 3.12, uv, build-essential, requests, pyyaml, ddgs, markitdown |
+| `quicksand-cua` | Overlay (`quicksand-agent`) | ~489-500 MB | `quicksand install quicksand-cua` | Agent Sandbox + Xvfb, x11vnc, noVNC, Playwright, Chromium |
+
+Sizes are approximate full image-wheel downloads for the September 14, 2026 releases
+and vary by architecture. Overlay sizes exclude their base images.
 
 ## Building from source
 

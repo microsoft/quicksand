@@ -1,6 +1,6 @@
 # Releasing
 
-Releases are managed via the `/release` Claude Code skill.
+Releases are managed by `uvr`, with the repository's `/release` skill as the workflow guide.
 
 ## Flow
 
@@ -72,3 +72,9 @@ failure normally requires a fresh dispatch.
 ## Changelog
 
 Update `CHANGELOG.md` on the release branch before dispatch. Categories: Added, Changed, Deprecated, Removed, Fixed, Security.
+
+After publication, refresh the short **Recent releases** list before
+**Installation** in the root `README.md`. Use the PyPI publication date, a
+version-specific PyPI link, and one or two sentences about the release.
+The `sync-readme` pre-commit hook copies the root README to
+`packages/quicksand/README.md` for the package description.
