@@ -56,7 +56,7 @@ At runtime, `_find_bundled_runtime()` reads the native CPU architecture from the
 
 **Build pipeline:**
 1. The Windows x64 CI runner builds `win_amd64.whl` with x64 QEMU in `bin/`
-2. The Windows ARM64 CI runner builds `win_arm64.whl` with ARM64 QEMU in `bin/`
+2. The GitHub-hosted `windows-11-arm` runner builds `win_arm64.whl` with ARM64 QEMU in `bin/`
 3. A `pre_release` hook (runs after all builds, before publishing) opens the `win_amd64` wheel, moves its binaries to `bin/x86_64/`, extracts ARM64 binaries from the `win_arm64` wheel into `bin/arm64/`, and rewrites the wheel
 4. The `win_arm64` wheel ships unchanged (lean, single-arch) for the rare native ARM64 Python user
 
@@ -70,13 +70,22 @@ quicksand-qemu is in `_SKIP` — never retagged. Each runner produces exactly on
 
 | Runner | QEMU Binary | Wheel Tag | After `pre_release` merge |
 |--------|-------------|-----------|--------------------------|
-| `[linux, x64]` | qemu-system-x86_64 (Linux) | `manylinux_2_17_x86_64` | unchanged |
-| `[linux, arm64]` | qemu-system-aarch64 (Linux) | `manylinux_2_17_aarch64` | unchanged |
+| `[linux, x64]` | qemu-system-x86_64 (Linux) | `manylinux_<major>_<minor>_x86_64` | unchanged |
+| `[linux, arm64]` | qemu-system-aarch64 (Linux) | `manylinux_<major>_<minor>_aarch64` | unchanged |
 | `[macos, arm64]` | qemu-system-aarch64 (macOS) | `macosx_11_0_arm64` | unchanged |
 | `[windows, x64]` | qemu-system-x86_64.exe | `win_amd64` | → **fat**: x64 in `bin/x86_64/`, arm64 in `bin/arm64/` |
-| `[windows, arm64]` | qemu-system-aarch64.exe | `win_arm64` ¹ | unchanged (consumed by merge into fat wheel) |
+| `windows-11-arm` | qemu-system-aarch64.exe | `win_arm64` ¹ | unchanged (consumed by merge into fat wheel) |
 
-¹ **Windows ARM64 tag override:** The ARM64 runner runs x86_64 Python through transparent emulation, so `sysconfig.get_platform()` returns `win-amd64`. Without intervention, this runner would produce a **second** `win_amd64` wheel containing ARM64 binaries — colliding with the x64 runner's wheel and making the fat wheel merge impossible (no `win_arm64` to merge from). We override the wheel tag in `BinaryBundler.set_platform_wheel_tag()` (`quicksand-build-tools`, used by quicksand-qemu) and `set_platform_wheel_tag()` (`quicksand-image-tools`, used by image packages) by reading the native architecture from the Windows Registry (`HKLM\...\PROCESSOR_ARCHITECTURE`), which always reports `ARM64` regardless of process emulation.
+Linux manylinux versions are derived from versioned symbols in the bundled ELF
+binaries and libraries. They are not fixed at glibc 2.17; pip selects a wheel
+compatible with the host's glibc version.
+
+With quicksand-build-tools 0.6.0, custom Linux build hooks must pass the bundled
+binary directory as `bin_dir` to `BinaryBundler.set_platform_wheel_tag()` and
+include auditwheel in their build dependencies. The QEMU hook supplies both;
+applications using `Sandbox` do not need to change their build configuration.
+
+¹ **Windows ARM64 tag override:** When an ARM64 runner uses x86_64 Python through transparent emulation, `sysconfig.get_platform()` returns `win-amd64`. Without intervention, it would produce a **second** `win_amd64` wheel containing ARM64 binaries, colliding with the x64 wheel. `BinaryBundler.set_platform_wheel_tag()` (`quicksand-build-tools`) and `set_platform_wheel_tag()` (`quicksand-image-tools`) detect the native architecture through the Windows Registry (`HKLM\...\PROCESSOR_ARCHITECTURE`) and apply `win_arm64`. Native ARM64 Python already reports the correct tag.
 
 #### Image wheels (ubuntu, alpine, etc.): build runners → retag
 
@@ -93,8 +102,8 @@ Image wheels contain qcow2 files that are cross-platform. Retag runs only on `RE
 
 | Host OS | Hardware | Python Arch | pip picks | QEMU binary used | HW accel |
 |---------|----------|-------------|-----------|------------------|----------|
-| Linux | x86_64 | x86_64 | `linux_x86_64` | qemu-system-x86_64 | KVM ✅ |
-| Linux | arm64 | arm64 | `linux_aarch64` | qemu-system-aarch64 | KVM ✅ |
+| Linux | x86_64 | x86_64 | compatible `manylinux_*_x86_64` | qemu-system-x86_64 | KVM ✅ |
+| Linux | arm64 | arm64 | compatible `manylinux_*_aarch64` | qemu-system-aarch64 | KVM ✅ |
 | macOS Intel | x86_64 | x86_64 | — (no wheel) | system QEMU (Homebrew) | HVF ✅ |
 | macOS Apple Silicon | arm64 | arm64 | `macosx_11_0_arm64` | qemu-system-aarch64 | HVF ✅ |
 | macOS Rosetta | arm64 | x86_64 | — (no wheel) | system QEMU (Homebrew) | TCG ❌ |

@@ -37,6 +37,8 @@ Shell = Callable[..., Coroutine[Any, Any, Any]]
 
 
 async def _setup(shell: Shell) -> None:
+    from quicksand_image_tools.build_utils import run_python_install
+
     # ── Install Xvfb, x11vnc, and Playwright system deps ────────
     await shell("apt-get update", timeout=120)
     await shell(
@@ -49,7 +51,9 @@ async def _setup(shell: Shell) -> None:
     )
 
     # ── Install Playwright and Chromium via Playwright ───────────
-    await shell('/opt/python/bin/pip install playwright "flake8==7.1.1"', timeout=300)
+    await run_python_install(
+        shell, '/opt/python/bin/pip install playwright "flake8==7.1.1"', timeout=300
+    )
     await shell(
         "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright"
         " /opt/python/bin/python3 -m playwright install --with-deps chromium",

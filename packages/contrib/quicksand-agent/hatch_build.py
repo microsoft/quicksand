@@ -23,12 +23,15 @@ logger = logging.getLogger("quicksand-agent")
 
 async def _setup(shell: Callable[..., Coroutine[Any, Any, Any]]) -> None:
     """Install steps for the agent sandbox."""
+    from quicksand_image_tools.build_utils import run_python_install
 
     # ── Install uv ──────────────────────────────────────────────
     await shell("curl -LsSf https://astral.sh/uv/install.sh | sh", timeout=60)
 
     # ── Create Python 3.12 venv with pip at /opt/python ────────
-    await shell("/root/.local/bin/uv venv /opt/python --python 3.12 --seed", timeout=120)
+    await run_python_install(
+        shell, "/root/.local/bin/uv venv /opt/python --python 3.12 --seed", timeout=120
+    )
 
     # ── Make venv discoverable on PATH ────────────────────────
     # Symlink venv binaries into /usr/local/bin (guest agent's PATH)
@@ -65,7 +68,8 @@ PROF
     await shell("apt-get install -y build-essential", timeout=600)
 
     # ── Install Python packages ─────────────────────────────────
-    await shell(
+    await run_python_install(
+        shell,
         "/opt/python/bin/pip install requests 'pyyaml>=6.0'"
         " 'ddgs>=9.11.2' 'markitdown[all]>=0.1.5'",
         timeout=600,
