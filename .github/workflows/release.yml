@@ -102,7 +102,7 @@ jobs:
         QUICKSAND_AUTO_INSTALL: "1"
       run: |
         uv venv --seed --clear
-        uv sync
+        uv sync --package quick-sandbox --all-extras
         git restore uv.lock
         uv run --no-sync uvr jobs build
     - id: upload
