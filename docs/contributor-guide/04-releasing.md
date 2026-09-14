@@ -40,6 +40,12 @@ Build jobs use uv 0.12.13 and install `quick-sandbox`, its extras, and the expli
 not needed to build wheels and are intentionally excluded from this bootstrap
 environment.
 
+Each build job uses an isolated `UV_CACHE_DIR` for that run and attempt.
+uv treats filenames in `--find-links` directories as immutable, so a persistent
+cache can silently install an earlier wheel when an unreleased version is rebuilt.
+Disabling the setup action's cache does not disable a self-hosted runner's local
+uv cache. Docker's build cache remains available across attempts.
+
 Agent and CUA overlay Python installs inherit the host's `PIP_INDEX_URL`,
 `PIP_EXTRA_INDEX_URL`, `UV_DEFAULT_INDEX`, `UV_INDEX_URL`, and
 `UV_EXTRA_INDEX_URL` through `run_python_install()` in the image tools. The guest
