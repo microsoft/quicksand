@@ -80,6 +80,11 @@ Linux manylinux versions are derived from versioned symbols in the bundled ELF
 binaries and libraries. They are not fixed at glibc 2.17; pip selects a wheel
 compatible with the host's glibc version.
 
+With quicksand-build-tools 0.6.0, custom Linux build hooks must pass the bundled
+binary directory as `bin_dir` to `BinaryBundler.set_platform_wheel_tag()` and
+include auditwheel in their build dependencies. The QEMU hook supplies both;
+applications using `Sandbox` do not need to change their build configuration.
+
 ¹ **Windows ARM64 tag override:** The ARM64 runner runs x86_64 Python through transparent emulation, so `sysconfig.get_platform()` returns `win-amd64`. Without intervention, this runner would produce a **second** `win_amd64` wheel containing ARM64 binaries — colliding with the x64 runner's wheel and making the fat wheel merge impossible (no `win_arm64` to merge from). We override the wheel tag in `BinaryBundler.set_platform_wheel_tag()` (`quicksand-build-tools`, used by quicksand-qemu) and `set_platform_wheel_tag()` (`quicksand-image-tools`, used by image packages) by reading the native architecture from the Windows Registry (`HKLM\...\PROCESSOR_ARCHITECTURE`), which always reports `ARM64` regardless of process emulation.
 
 #### Image wheels (ubuntu, alpine, etc.): build runners → retag

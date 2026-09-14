@@ -15,11 +15,12 @@ Streaming command input, guest OS accounts, and more reliable mounted-file workf
 
 ### Changed
 - **quicksand-image-tools / quicksand-alpine / quicksand-ubuntu:** Image freshness checks include the Rust agent source and Cargo manifests, so agent-only changes rebuild cached images.
+- **quicksand-build-tools v0.6.0:** Linux callers of `BinaryBundler.set_platform_wheel_tag()` must pass `bin_dir` and include auditwheel in their build dependencies. The QEMU build hook supplies both.
 - **Documentation:** Added a command-scoped `core.filemode=false` workaround for synthetic executable bits on CIFS-mounted Git repositories. The host-index deletion reported in #31 did not reproduce and remains unconfirmed.
 
 ### Fixed
 - **quicksand-core:** Bundled SMB mounts use guest-local CIFS locks so `flock` and SQLite commits work. Native SMB retains server-side byte-range locking. Guest-local locks do not coordinate with host processes, other VMs, or separate mounts. (#44)
-- **quicksand-build-tools v0.5.10 / quicksand-qemu v0.5.12:** Linux wheel tags reflect the actual glibc requirements of bundled ELF binaries and libraries instead of always claiming manylinux 2.17 compatibility.
+- **quicksand-build-tools v0.6.0 / quicksand-qemu v0.5.12:** Linux wheel tags reflect the actual glibc requirements of bundled ELF binaries and libraries instead of always claiming manylinux 2.17 compatibility.
 
 ### Released (dependency updates)
 - quicksand-agent v0.4.10, quicksand-cua v0.3.12, quicksand-alpine-desktop v0.9.10, quicksand-ubuntu-desktop v0.9.10, quicksand-base-scaffold v0.3.11, and quicksand-overlay-scaffold v0.3.11. Updated dependency ranges pick up the new core, image tooling, and base images.
