@@ -1,6 +1,6 @@
 # Releasing
 
-Releases are managed via the `/release` Claude Code skill.
+Releases are managed by `uvr`, with the repository's `/release` skill as the workflow guide.
 
 ## Flow
 
@@ -72,3 +72,8 @@ failure normally requires a fresh dispatch.
 ## Changelog
 
 Update `CHANGELOG.md` on the release branch before dispatch. Categories: Added, Changed, Deprecated, Removed, Fixed, Security.
+
+The root README's GitHub release badge links to the changelog and updates its
+version automatically after publication.
+The `sync-readme` pre-commit hook copies the root README to
+`packages/quicksand/README.md` for the package description.
