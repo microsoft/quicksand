@@ -73,8 +73,7 @@ failure normally requires a fresh dispatch.
 
 Update `CHANGELOG.md` on the release branch before dispatch. Categories: Added, Changed, Deprecated, Removed, Fixed, Security.
 
-After publication, refresh the short **Recent releases** list before
-**Installation** in the root `README.md`. Use the PyPI publication date, a
-version-specific PyPI link, and one or two sentences about the release.
+The root README's GitHub release badge links to the changelog and updates its
+version automatically after publication.
 The `sync-readme` pre-commit hook copies the root README to
 `packages/quicksand/README.md` for the package description.

@@ -1,20 +1,13 @@
 # Quicksand
 
 [![PyPI](https://img.shields.io/pypi/v/quick-sandbox)](https://pypi.org/project/quick-sandbox/)
+[![Changelog](https://img.shields.io/github/v/release/microsoft/quicksand?label=changelog&logo=github)](https://github.com/microsoft/quicksand/blob/main/CHANGELOG.md)
 [![Docs](https://img.shields.io/badge/docs-quicksand-blue)](https://microsoft.github.io/quicksand/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ![Quicksand](docs/banner-light.png)
 
 Quicksand is an async Python API to launch, control, and snapshot [QEMU](https://www.qemu.org) virtual machines with a particular focus on sandboxing AI agents. Quicksand provides pre-built Linux VMs for Ubuntu and Alpine distros and supports x86_64 and ARM64 across macOS, Linux, and Windows. Running sandboxes needs no root privileges or Docker; install the QEMU and image extras for a bundled runtime on supported platforms.
-
-## Recent releases
-
-- 🚀 **2026-09-14 — [quick-sandbox 0.12.0](https://pypi.org/project/quick-sandbox/0.12.0/):** Streaming `stdin`, guest-user accounts, and guest-local `flock`/SQLite locking. Includes refreshed Ubuntu and Alpine images; upgrade your images alongside the host package.
-- 🏔️ **2026-09-09 — [quicksand-alpine 0.9.12](https://pypi.org/project/quicksand-alpine/0.9.12/):** Rebuilt Alpine 3.23 images across the supported platforms and corrected the minimal-image package documentation.
-- 🪟 **2026-07-07 — [quick-sandbox 0.11.15](https://pypi.org/project/quick-sandbox/0.11.15/):** Windows file sharing without Administrator rights. Also fixes CIFS remount hangs and adds a loopback TCP transport for the guest agent on Windows.
-
-See the [changelog](https://github.com/microsoft/quicksand/blob/main/CHANGELOG.md) for the full release history.
 
 ## Installation
 
@@ -51,6 +44,25 @@ asyncio.run(main())
 result = await sb.execute("apt update && apt install -y python3")
 print(result.stdout, result.exit_code)
 ```
+
+### Create guest users
+
+Give workloads their own Linux accounts and home directories inside one VM.
+Commands run with the user's identity and default to their home directory.
+
+```python
+async with Sandbox(image="ubuntu") as sb:
+    alice = await sb.create_user("alice")
+    await alice.execute("cat > hello.txt", stdin="Hello from Alice!\n")
+
+    result = await alice.execute("whoami && pwd && cat hello.txt")
+    print(result.stdout)
+
+    await sb.delete_user("alice")  # Also removes the user's home directory
+```
+
+Users share one VM, not separate VM isolation boundaries. Requires Ubuntu or
+Alpine image packages 0.10.0 or newer, or a custom image with the updated guest agent.
 
 ### Mount host directories
 
