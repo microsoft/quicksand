@@ -92,10 +92,12 @@ Input consumption stops when the command exits. Cancelling the call or reaching
 its timeout terminates the stdin-enabled command's process group. Exceptions
 from the input producer propagate to the caller after the command is cancelled.
 
-Streaming stdin requires a guest image whose agent advertises the
-`stdin_streaming` capability. Older images return an explicit error without
-starting the command or consuming input. Update or rebuild the image with the
-new guest agent; upgrading the host Python package alone is not sufficient.
+Streaming stdin requires quicksand-core 0.13.0 or newer and a guest image whose
+agent advertises the `stdin_streaming` capability. Use quicksand-ubuntu or
+quicksand-alpine 0.10.0 or newer, or rebuild a custom image with the new agent.
+Older images return an explicit error without starting the command or consuming
+input. Upgrading the host Python package alone does not update an older or saved
+guest image.
 
 ## Running as separate users
 
@@ -121,7 +123,8 @@ and output-streaming options as `Sandbox.execute()`.
 Usernames must match `[a-z_][a-z0-9_-]*` and contain at most 32 characters.
 Pass `remove_home=False` to `delete_user()` to keep the home directory. These are
 ordinary OS accounts sharing one VM, not separate VM isolation boundaries.
-Creating users requires an image containing the updated guest agent.
+Creating users requires quicksand-ubuntu or quicksand-alpine 0.10.0 or newer,
+or a custom image containing the updated guest agent.
 
 ## Multi-step workflows
 

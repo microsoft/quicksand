@@ -4,6 +4,26 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [quicksand-core v0.13.0, quick-sandbox v0.12.0, quicksand-image-tools v0.6.0] - 2026-09-14
+
+Streaming command input, guest OS accounts, and more reliable mounted-file workflows.
+
+### Added
+- **quicksand-core / quick-sandbox:** `execute(stdin=...)` accepts an async iterable of byte chunks, bytes, or a UTF-8 string. Input and output stream concurrently with backpressure, EOF, early-exit cleanup, and process-group cancellation. Both HTTP and virtio-serial are supported. Older images reject stdin explicitly rather than silently ignoring it. (#36)
+- **quicksand-core / quick-sandbox:** `create_user()`, `delete_user()`, `SandboxUser`, and `execute(user=...)` support guest OS accounts with separate home directories and file ownership. User-scoped execution applies UID, GID, supplementary groups, environment, and working directory, including when streaming stdin. These accounts share one VM; they are not separate VM isolation boundaries. (#27)
+- **quicksand-alpine v0.10.0 / quicksand-ubuntu v0.10.0:** Updated guest agents provide stdin streaming and multi-user execution. Updating the host package alone does not update older or saved guest images.
+
+### Changed
+- **quicksand-image-tools / quicksand-alpine / quicksand-ubuntu:** Image freshness checks include the Rust agent source and Cargo manifests, so agent-only changes rebuild cached images.
+- **Documentation:** Added a command-scoped `core.filemode=false` workaround for synthetic executable bits on CIFS-mounted Git repositories. The host-index deletion reported in #31 did not reproduce and remains unconfirmed.
+
+### Fixed
+- **quicksand-core:** Bundled SMB mounts use guest-local CIFS locks so `flock` and SQLite commits work. Native SMB retains server-side byte-range locking. Guest-local locks do not coordinate with host processes, other VMs, or separate mounts. (#44)
+- **quicksand-build-tools v0.5.10 / quicksand-qemu v0.5.12:** Linux wheel tags reflect the actual glibc requirements of bundled ELF binaries and libraries instead of always claiming manylinux 2.17 compatibility.
+
+### Released (dependency updates)
+- quicksand-agent v0.4.10, quicksand-cua v0.3.12, quicksand-alpine-desktop v0.9.10, quicksand-ubuntu-desktop v0.9.10, quicksand-base-scaffold v0.3.11, and quicksand-overlay-scaffold v0.3.11. Updated dependency ranges pick up the new core, image tooling, and base images.
+
 ## [quicksand-alpine v0.9.12] - 2026-09-01
 
 ### Changed
