@@ -76,9 +76,9 @@ async with Sandbox(
     ...
 ```
 
-### Multiple linux users
+### Multiple Linux users
 
-Give multiple agents independent linux user accounts in a single sandbox VM.
+Give multiple agents independent Linux user accounts in a single sandbox VM.
 
 ```python
 async with Sandbox(image="ubuntu") as sb:
