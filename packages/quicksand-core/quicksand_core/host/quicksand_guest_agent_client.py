@@ -185,6 +185,8 @@ class QuicksandGuestAgentClient:
             endpoint_map = {
                 QuicksandGuestAgentMethod.EXECUTE: "/execute",
                 QuicksandGuestAgentMethod.PING: "/ping",
+                QuicksandGuestAgentMethod.CREATE_USER: "/create_user",
+                QuicksandGuestAgentMethod.DELETE_USER: "/delete_user",
             }
 
             endpoint = endpoint_map.get(method)
