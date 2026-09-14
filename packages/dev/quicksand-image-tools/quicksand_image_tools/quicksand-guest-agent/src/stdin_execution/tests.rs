@@ -63,8 +63,14 @@ async fn finish(mut output: mpsc::Receiver<OutputEvent>) -> (String, String, i32
     }
 }
 
+impl StdinExecutions {
+    pub(crate) fn assert_no_registrations(&self) {
+        assert!(self.entries.lock().unwrap().is_empty());
+    }
+}
+
 fn assert_clean(executions: &StdinExecutions, busy: &AtomicBool) {
-    assert!(executions.entries.lock().unwrap().is_empty());
+    executions.assert_no_registrations();
     assert!(!busy.load(Ordering::SeqCst));
 }
 
