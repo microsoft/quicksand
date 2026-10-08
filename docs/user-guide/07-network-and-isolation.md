@@ -4,7 +4,7 @@
 
 All examples below assume:
 ```python
-from quicksand import Sandbox, NetworkMode, PortForward
+from quicksand import Sandbox, NetworkMode, PortForward, GuestForward
 ```
 
 ## Default: isolated
@@ -59,6 +59,28 @@ port_forwards=[
     PortForward(host=5432, guest=5432),  # PostgreSQL
 ]
 ```
+
+## Reaching host services from the guest
+
+`guest_forwards` works the other way round: it gives the guest an address that leads to a TCP service on the host. It works in the default `MOUNTS_ONLY` mode, so the guest can reach that one service while the internet and the rest of the host stay blocked.
+
+```python
+# A proxy on the host listens on 127.0.0.1:8888
+async with Sandbox(
+    image="ubuntu",
+    guest_forwards=[
+        GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8888),
+    ],
+) as sb:
+    await sb.execute("http_proxy=http://10.0.2.101:3128 curl http://example.com")
+```
+
+- `guest_address` is any free address in `10.0.2.0/24` except `10.0.2.2` (gateway), `10.0.2.3` (DNS) and `10.0.2.15` (the guest).
+- `host_address` defaults to `127.0.0.1`.
+- Each guest connection gets its own connection to the host service.
+- Not supported on Windows hosts.
+
+This is useful for letting the agent reach the internet only through a filtering proxy that you run, or for giving it an HTTP API of your own.
 
 ## Security boundary
 
