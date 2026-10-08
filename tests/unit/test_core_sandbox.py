@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shlex
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -158,6 +160,19 @@ class TestSandboxNetworkArgs:
         assert "guestfwd=tcp:10.0.2.100:445-cmd:" in args[1]
         assert "_tcp_relay.py" in args[1]
         assert "127.0.0.1 4450" in args[1]
+
+    def test_mounts_only_relay_command_keeps_spaces_in_paths(self, fake_qcow2, monkeypatch):
+        """QEMU splits a guestfwd cmd: like a shell, so a spaced Python path must be quoted."""
+        python = "/opt/my tools/bin/python3"
+        monkeypatch.setattr(sys, "executable", python)
+        config = SandboxConfig(image="ubuntu", network_mode=NetworkMode.MOUNTS_ONLY)
+        platform_config = _create_test_platform_config()
+
+        args = platform_config._build_network_args(config, 12345, smb_port=4450)
+        argv = shlex.split(args[1].split("-cmd:", 1)[1])
+        assert argv[0] == python
+        assert argv[1].endswith("_tcp_relay.py")
+        assert argv[2:] == ["127.0.0.1", "4450"]
 
     def test_port_forwards(self, fake_qcow2):
         """Test port forwarding configuration."""

@@ -7,8 +7,12 @@ pure-Python SMB3 implementation over a socket, independent of any VM.
 from __future__ import annotations
 
 import os
+import shlex
 import socket
 import struct
+import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -156,6 +160,26 @@ class TestServeSocket:
                 assert resp[4:8] == SMB2_MAGIC
             finally:
                 c.close()
+
+
+class TestGuestfwdCommand:
+    def test_paths_with_spaces_stay_single_arguments(self, tmp_path, monkeypatch):
+        """QEMU splits the guestfwd command like a shell, so paths must be quoted."""
+        python = "/opt/my tools/bin/python3"
+        temp_root = tmp_path / "temp dir"
+        temp_root.mkdir()
+        monkeypatch.setattr(sys, "executable", python)
+        monkeypatch.setattr(tempfile, "tempdir", str(temp_root))
+
+        srv = QuicksandSMBServer()
+        srv.start()
+        try:
+            argv = shlex.split(srv.get_guestfwd_cmd())
+        finally:
+            srv.stop()
+
+        assert argv[:4] == [python, "-m", "quicksand_smb", "--config"]
+        assert Path(argv[4]).parent.parent == temp_root
 
 
 class TestFactory:
