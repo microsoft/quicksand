@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from .._types import KernelParams, NetworkConstants, NetworkMode
 from ..host.os_ import (
+    OS,
     Accelerator,
     AcceleratorStatus,
     BaseOSConfig,
@@ -378,13 +379,19 @@ class PlatformConfig:
         if guestfwd_cmd is not None:
             guestfwd = f",guestfwd=tcp:{guestfwd_ip}:{guestfwd_port}-cmd:{guestfwd_cmd}"
         elif config.network_mode is NetworkMode.MOUNTS_ONLY and smb_port is not None:
-            import sys
-
-            relay_script = str(Path(__file__).resolve().parent.parent / "_tcp_relay.py")
-            relay_cmd = shlex.join(
-                [sys.executable, relay_script, NetworkConstants.LOCALHOST, str(smb_port)]
-            )
+            relay_cmd = _relay_cmd(NetworkConstants.LOCALHOST, smb_port)
             guestfwd = f",guestfwd=tcp:{guestfwd_ip}:{guestfwd_port}-cmd:{relay_cmd}"
+
+        # Guest forwards: QEMU runs the relay once per guest connection, so each
+        # guest connection gets its own connection to the host service.
+        if config.guest_forwards and self.os.os_type is OS.WINDOWS:
+            raise RuntimeError(
+                "guest_forwards are not supported on Windows hosts: QEMU for Windows "
+                "cannot start the per-connection relay that guestfwd needs"
+            )
+        for gf in config.guest_forwards:
+            relay_cmd = _relay_cmd(gf.host_address, gf.host_port)
+            guestfwd += f",guestfwd=tcp:{gf.guest_address}:{gf.guest_port}-cmd:{relay_cmd}"
 
         netdev_opts = f"user,id=net0,restrict={restrict},{hostfwd}{guestfwd}"
         virtio_net = self._get_virtio_net_device()
@@ -395,6 +402,17 @@ class PlatformConfig:
             "-device",
             f"{virtio_net},netdev=net0",
         ]
+
+
+def _relay_cmd(host: str, port: int) -> str:
+    """Command for a guestfwd ``cmd:`` that relays the connection to host:port.
+
+    QEMU splits the string like a shell, so each argument is quoted.
+    """
+    import sys
+
+    relay_script = str(Path(__file__).resolve().parent.parent / "_tcp_relay.py")
+    return shlex.join([sys.executable, relay_script, host, str(port)])
 
 
 @lru_cache(maxsize=1)

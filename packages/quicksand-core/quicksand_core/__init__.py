@@ -12,6 +12,7 @@ from . import _types as types
 from ._types import (
     BaseImageInfo,
     BootTiming,
+    GuestForward,
     ImageProvider,
     Key,
     Mount,
@@ -65,6 +66,7 @@ __all__ = [  # noqa: RUF022
     "MountHandle",
     "MountType",
     "PortForward",
+    "GuestForward",
     "ExecuteResult",
     "SandboxUser",
     # Boot timing
