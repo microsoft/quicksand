@@ -24,6 +24,7 @@ from ..host.os_ import (
 )
 from ..host.smb import SMBServer
 from .arch import (
+    Architecture,
     ArchitectureConfig,
     BaseArchitectureConfig,
     MachineType,
@@ -223,14 +224,13 @@ class PlatformConfig:
 
         if accelerator:
             accel_arg = accelerator.value
-            if accelerator == Accelerator.WHPX:
-                # kernel-irqchip=off routes interrupts through userspace. WHPX's
-                # in-kernel irqchip combined with the guest's noapic boot param
-                # (our IO-APIC workaround) delivers device interrupts unreliably:
-                # later `mount -t cifs` operations hang in the guest kernel until
-                # they time out. This was previously only applied when nested
-                # (baseboard == "Microsoft Corporation"), but bare-metal Windows
-                # hosts need it too, so apply it for WHPX unconditionally.
+            if accelerator == Accelerator.WHPX and self.arch.arch_type == Architecture.X86_64:
+                # kernel-irqchip=off is the x86 noapic workaround. WHPX's
+                # in-kernel irqchip plus the guest's noapic boot param drops
+                # device interrupts, so later `mount -t cifs` calls hang.
+                # Bare-metal x86_64 still needs the userspace irqchip. Arm
+                # WHPX accepts only kernel-irqchip=on, so every other
+                # architecture keeps a bare whpx accel arg.
                 accel_arg = "whpx,kernel-irqchip=off"
             cmd.extend(["-accel", accel_arg])
 
