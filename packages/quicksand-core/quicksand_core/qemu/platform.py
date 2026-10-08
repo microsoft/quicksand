@@ -10,6 +10,7 @@ Performance optimizations applied automatically:
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -380,11 +381,10 @@ class PlatformConfig:
             import sys
 
             relay_script = str(Path(__file__).resolve().parent.parent / "_tcp_relay.py")
-            guestfwd = (
-                f",guestfwd=tcp:{guestfwd_ip}:{guestfwd_port}-"
-                f"cmd:{sys.executable} {relay_script} "
-                f"{NetworkConstants.LOCALHOST} {smb_port}"
+            relay_cmd = shlex.join(
+                [sys.executable, relay_script, NetworkConstants.LOCALHOST, str(smb_port)]
             )
+            guestfwd = f",guestfwd=tcp:{guestfwd_ip}:{guestfwd_port}-cmd:{relay_cmd}"
 
         netdev_opts = f"user,id=net0,restrict={restrict},{hostfwd}{guestfwd}"
         virtio_net = self._get_virtio_net_device()
