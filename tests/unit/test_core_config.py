@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from quicksand_core import Mount, PortForward, SandboxConfig
+from quicksand_core import GuestForward, Mount, PortForward, SandboxConfig
 from quicksand_core._types import NetworkMode
 
 
@@ -31,6 +31,57 @@ class TestMount:
 
         assert mount1 == mount2
         assert mount1 != mount3
+
+
+class TestGuestForward:
+    """Tests for GuestForward and its validation in SandboxConfig."""
+
+    def test_host_address_defaults_to_loopback(self):
+        forward = GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8080)
+        assert forward.host_address == "127.0.0.1"
+
+    def test_config_defaults_to_no_guest_forwards(self):
+        assert SandboxConfig(image="ubuntu").guest_forwards == []
+
+    def test_config_accepts_guest_forwards(self):
+        forward = GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8080)
+        config = SandboxConfig(image="ubuntu", guest_forwards=[forward])
+        assert config.guest_forwards == [forward]
+
+    @pytest.mark.parametrize(
+        "guest_address",
+        [
+            "proxy.local",  # not an IPv4 address
+            "10.0.3.101",  # outside the 10.0.2.0/24 user-mode network
+            "10.0.2.0",  # network address
+            "10.0.2.255",  # broadcast address
+            "10.0.2.2",  # gateway
+            "10.0.2.3",  # DNS
+            "10.0.2.15",  # the guest itself
+        ],
+    )
+    def test_rejects_unusable_guest_address(self, guest_address):
+        forward = GuestForward(guest_address=guest_address, guest_port=3128, host_port=8080)
+        with pytest.raises(ValidationError, match="guest_address"):
+            SandboxConfig(image="ubuntu", guest_forwards=[forward])
+
+    def test_rejects_duplicate_guest_endpoint(self):
+        forwards = [
+            GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8080),
+            GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=9090),
+        ]
+        with pytest.raises(ValidationError, match=r"10\.0\.2\.101:3128"):
+            SandboxConfig(image="ubuntu", guest_forwards=forwards)
+
+    def test_rejects_the_smb_tunnel_endpoint(self):
+        forward = GuestForward(guest_address="10.0.2.100", guest_port=445, host_port=8080)
+        with pytest.raises(ValidationError, match=r"10\.0\.2\.100:445"):
+            SandboxConfig(image="ubuntu", guest_forwards=[forward])
+
+    def test_rejects_guest_forwards_without_a_network(self):
+        forward = GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8080)
+        with pytest.raises(ValidationError, match="NONE"):
+            SandboxConfig(image="ubuntu", network_mode=NetworkMode.NONE, guest_forwards=[forward])
 
 
 class TestSandboxConfig:
