@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import shlex
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from quicksand_core import PortForward, Sandbox, SandboxConfig
+from quicksand_core import GuestForward, PortForward, Sandbox, SandboxConfig
 from quicksand_core._types import NetworkMode
-from quicksand_core.host import Accelerator, LinuxConfig
+from quicksand_core.host import Accelerator, LinuxConfig, WindowsConfig
 from quicksand_core.host.quicksand_guest_agent_client import _retry_on_transient_error
 from quicksand_core.qemu.arch import X86_64Config
 from quicksand_core.qemu.platform import PlatformConfig, RuntimeInfo
@@ -159,6 +161,19 @@ class TestSandboxNetworkArgs:
         assert "_tcp_relay.py" in args[1]
         assert "127.0.0.1 4450" in args[1]
 
+    def test_mounts_only_relay_command_keeps_spaces_in_paths(self, fake_qcow2, monkeypatch):
+        """QEMU splits a guestfwd cmd: like a shell, so a spaced Python path must be quoted."""
+        python = "/opt/my tools/bin/python3"
+        monkeypatch.setattr(sys, "executable", python)
+        config = SandboxConfig(image="ubuntu", network_mode=NetworkMode.MOUNTS_ONLY)
+        platform_config = _create_test_platform_config()
+
+        args = platform_config._build_network_args(config, 12345, smb_port=4450)
+        argv = shlex.split(args[1].split("-cmd:", 1)[1])
+        assert argv[0] == python
+        assert argv[1].endswith("_tcp_relay.py")
+        assert argv[2:] == ["127.0.0.1", "4450"]
+
     def test_port_forwards(self, fake_qcow2):
         """Test port forwarding configuration."""
         config = SandboxConfig(
@@ -170,6 +185,52 @@ class TestSandboxNetworkArgs:
         args = platform_config._build_network_args(config, 12345)
         assert "hostfwd=tcp:127.0.0.1:8080-:80" in args[1]
         assert "hostfwd=tcp:127.0.0.1:8443-:443" in args[1]
+
+    @pytest.mark.parametrize("network_mode", [NetworkMode.MOUNTS_ONLY, NetworkMode.FULL])
+    def test_guest_forwards_relay_each_connection_to_the_host(self, fake_qcow2, network_mode):
+        """Each GuestForward becomes a guestfwd rule that runs the TCP relay."""
+        config = SandboxConfig(
+            image="ubuntu",
+            network_mode=network_mode,
+            guest_forwards=[
+                GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8080),
+                GuestForward(
+                    guest_address="10.0.2.102",
+                    guest_port=80,
+                    host_port=9000,
+                    host_address="192.168.1.20",
+                ),
+            ],
+        )
+        platform_config = _create_test_platform_config()
+
+        args = platform_config._build_network_args(config, 12345)
+        rules = [r for r in args[1].split(",") if r.startswith("guestfwd=")]
+        assert len(rules) == 2
+        targets = []
+        for rule in rules:
+            endpoint, cmd = rule.removeprefix("guestfwd=").split("-cmd:", 1)
+            argv = shlex.split(cmd)
+            assert argv[0] == sys.executable
+            assert argv[1].endswith("_tcp_relay.py")
+            targets.append((endpoint, argv[2:]))
+        assert targets == [
+            ("tcp:10.0.2.101:3128", ["127.0.0.1", "8080"]),
+            ("tcp:10.0.2.102:80", ["192.168.1.20", "9000"]),
+        ]
+
+    def test_guest_forwards_are_refused_on_windows_hosts(self, fake_qcow2):
+        """QEMU for Windows cannot spawn guestfwd commands, so fail loudly."""
+        config = SandboxConfig(
+            image="ubuntu",
+            guest_forwards=[
+                GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8080)
+            ],
+        )
+        platform_config = PlatformConfig(arch=X86_64Config(), os=WindowsConfig())
+
+        with pytest.raises(RuntimeError, match="Windows"):
+            platform_config._build_network_args(config, 12345)
 
 
 class TestSandboxMountConfig:

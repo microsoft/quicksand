@@ -41,6 +41,7 @@ from quicksand_core import (
     Architecture,
     BootTiming,
     ExecuteResult,
+    GuestForward,
     Key,
     MachineType,
     Mount,
@@ -114,6 +115,7 @@ __all__ = [  # noqa: RUF022
     "Mount",
     "MountType",
     "PortForward",
+    "GuestForward",
     "ExecuteResult",
     # Boot timing
     "BootTiming",

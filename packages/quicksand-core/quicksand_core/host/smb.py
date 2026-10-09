@@ -16,6 +16,7 @@ import contextlib
 import logging
 import os
 import secrets
+import shlex
 import socket
 import subprocess
 import sys
@@ -283,7 +284,10 @@ class QuicksandSMBServer(_ConfigBackedSMBServer):
     def get_guestfwd_cmd(self) -> str:
         """Return the command string for QEMU guestfwd to spawn the SMB server."""
         assert self._config_path is not None
-        return f"{sys.executable} -m quicksand_smb --config {self._config_path}"
+        # QEMU splits this string like a shell, so quote paths that may hold spaces.
+        return shlex.join(
+            [sys.executable, "-m", "quicksand_smb", "--config", str(self._config_path)]
+        )
 
 
 class QuicksandSMBTCPServer(_ConfigBackedSMBServer):

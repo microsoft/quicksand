@@ -12,6 +12,7 @@ Platform and Architecture enums are in platform.py.
 
 from __future__ import annotations
 
+import ipaddress
 import subprocess
 import sys
 from collections.abc import AsyncIterable
@@ -20,7 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Protocol, TypedDict, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from .host import Accelerator
 
@@ -96,6 +97,24 @@ class PortForward:
 
     host: int
     guest: int
+
+
+@dataclass
+class GuestForward:
+    """Forward a TCP port in the guest to a service on the host.
+
+    Guest connections to ``guest_address:guest_port`` reach
+    ``host_address:host_port`` on the host, with one host connection per
+    guest connection. This works in ``MOUNTS_ONLY`` mode, where the guest
+    otherwise cannot reach the host or the internet. ``guest_address`` is any
+    unused address in the 10.0.2.0/24 user-mode network, such as
+    ``10.0.2.101``. Not supported on Windows hosts.
+    """
+
+    guest_address: str
+    guest_port: int
+    host_port: int
+    host_address: str = "127.0.0.1"
 
 
 # =============================================================================
@@ -608,6 +627,7 @@ class SandboxConfig(BaseModel):
     cpus: int = 1
     mounts: list[Mount] = []
     port_forwards: list[PortForward] = []
+    guest_forwards: list[GuestForward] = []
     network_mode: NetworkMode = NetworkMode.MOUNTS_ONLY
     extra_qemu_args: list[str] = []
     boot_timeout: float = Timeouts.BOOT_DEFAULT
@@ -627,6 +647,45 @@ class SandboxConfig(BaseModel):
 
         parse_memory_size(v)
         return v
+
+    @field_validator("guest_forwards")
+    @classmethod
+    def _validate_guest_forwards(cls, v: list[GuestForward]) -> list[GuestForward]:
+        network = ipaddress.ip_network(
+            f"{NetworkConstants.QEMU_SLIRP_GATEWAY}/{NetworkConstants.QEMU_SLIRP_NETMASK}",
+            strict=False,
+        )
+        reserved = {
+            network.network_address,
+            network.broadcast_address,
+            ipaddress.IPv4Address(NetworkConstants.QEMU_SLIRP_GATEWAY),
+            ipaddress.IPv4Address(NetworkConstants.QEMU_SLIRP_DNS),
+            ipaddress.IPv4Address(NetworkConstants.QEMU_SLIRP_GUEST_IP),
+        }
+        in_use = {(NetworkConstants.GUESTFWD_SMB_IP, NetworkConstants.GUESTFWD_SMB_PORT)}
+        for forward in v:
+            try:
+                address = ipaddress.IPv4Address(forward.guest_address)
+            except ValueError:
+                raise ValueError(
+                    f"guest_address {forward.guest_address!r} is not an IPv4 address"
+                ) from None
+            if address not in network or address in reserved:
+                raise ValueError(
+                    f"guest_address {forward.guest_address} must be an unused address "
+                    f"in {network}, not the gateway, DNS server or guest"
+                )
+            endpoint = (str(address), forward.guest_port)
+            if endpoint in in_use:
+                raise ValueError(f"{address}:{forward.guest_port} is already forwarded")
+            in_use.add(endpoint)
+        return v
+
+    @model_validator(mode="after")
+    def _check_guest_forwards_have_a_network(self) -> SandboxConfig:
+        if self.guest_forwards and self.network_mode is NetworkMode.NONE:
+            raise ValueError("guest_forwards need a network, but network_mode is NONE")
+        return self
 
     @property
     def memory_bytes(self) -> int:
@@ -649,6 +708,7 @@ class SandboxConfigParams(TypedDict, total=False):
     cpus: int
     mounts: list[Mount]
     port_forwards: list[PortForward]
+    guest_forwards: list[GuestForward]
     network_mode: NetworkMode
     extra_qemu_args: list[str]
     boot_timeout: float

@@ -10,6 +10,7 @@ class TestQuicksandExports:
         """Test core classes are exported."""
         from quicksand import (
             ExecuteResult,
+            GuestForward,
             Mount,
             Sandbox,
             SandboxConfig,
@@ -18,6 +19,7 @@ class TestQuicksandExports:
         assert Sandbox is not None
         assert SandboxConfig is not None
         assert Mount is not None
+        assert GuestForward is not None
         assert ExecuteResult is not None
 
     def test_runtime_exports(self):

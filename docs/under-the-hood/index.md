@@ -159,6 +159,7 @@ All configuration is passed as keyword arguments to `Sandbox(...)`:
 | `cpus` | Number of virtual CPUs |
 | `mounts` | List of `Mount` for boot-time host directory sharing |
 | `port_forwards` | List of `PortForward(host=..., guest=...)` objects |
+| `guest_forwards` | List of `GuestForward(guest_address=..., guest_port=..., host_port=...)` objects that let the guest reach host services (not on Windows hosts) |
 | `save` | Auto-save name on stop (on `Sandbox.__init__`, not `SandboxConfig`) |
 | `network_mode` | `NetworkMode` enum: `NONE`, `MOUNTS_ONLY` (default), `FULL` |
 | `extra_qemu_args` | Additional QEMU command line arguments |
@@ -608,7 +609,7 @@ Direct kernel boot skips BIOS, UEFI, and the bootloader (GRUB etc.), cutting boo
 
 User-mode networking (SLIRP) requires no root or admin privileges. The guest gets a private IP (`10.0.2.15`), and QEMU acts as a NAT router. `restrict=on` (`NetworkMode.MOUNTS_ONLY`, default) blocks guest-initiated outbound connections, but guestfwd tunnels allow the guest to reach the host SMB server for mounts. `restrict=off` (`NetworkMode.FULL`) enables full bidirectional access including internet. `NetworkMode.NONE` omits the NIC entirely.
 
-Port forwarding (`hostfwd`) enables host→guest communication for the agent API.
+Port forwarding (`hostfwd`) enables host→guest communication for the agent API. Guest forwards (`guestfwd` with the TCP relay) let the guest reach chosen host services.
 
 ### QMP
 

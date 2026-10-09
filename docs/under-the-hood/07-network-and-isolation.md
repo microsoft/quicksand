@@ -63,6 +63,25 @@ Each `PortForward(host, guest)` pair becomes a `hostfwd` rule. The agent port's 
 
 All forwards bind to `127.0.0.1`. They are only accessible from the host, not from the network.
 
+## Guest forwards
+
+```python
+Sandbox(
+    image="ubuntu",
+    guest_forwards=[GuestForward(guest_address="10.0.2.101", guest_port=3128, host_port=8888)],
+)
+```
+
+```bash
+-netdev user,id=net0,restrict=on,...,guestfwd=tcp:10.0.2.101:3128-cmd:/path/to/python /path/to/_tcp_relay.py 127.0.0.1 8888
+```
+
+Each `GuestForward` becomes a `guestfwd` rule. When the guest connects to `10.0.2.101:3128`, QEMU starts `_tcp_relay.py` with that connection on its stdin and stdout, and the relay opens its own connection to `127.0.0.1:8888`. Every guest connection gets its own relay and host connection, so concurrent connections work, and so do servers that close the connection after each response. A socket chardev (`guestfwd=...-tcp:127.0.0.1:8888`) would instead connect once when QEMU starts and carry every guest connection over that one socket.
+
+`restrict=on` does not apply to `guestfwd`, so the forward works in `MOUNTS_ONLY` mode while other traffic stays blocked, including the host's other ports on `10.0.2.2`.
+
+QEMU splits the `cmd:` string like a shell, so each argument is quoted. QEMU for Windows does not start `cmd:` helpers, so guest forwards raise an error on Windows hosts.
+
 ## Virtio network device
 
 The device type depends on machine type:
