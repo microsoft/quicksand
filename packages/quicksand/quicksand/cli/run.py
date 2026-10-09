@@ -7,6 +7,10 @@ import asyncio
 import contextlib
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from quicksand_core._types import Forward
 
 GLOBAL_SAVES_DIR = Path.home() / ".quicksand" / "sandboxes"
 
@@ -67,8 +71,18 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
         "-p",
         "--port",
         action="append",
-        metavar="HOST:GUEST",
-        help="Forward host port to guest port (can be repeated)",
+        metavar="[HOST_ADDR:]HOST_PORT:[GUEST_ADDR:]GUEST_PORT",
+        help="Expose guest port GUEST_PORT on the host at HOST_ADDR:HOST_PORT "
+        "(default HOST_ADDR 127.0.0.1; can be repeated)",
+    )
+    parser.add_argument(
+        "-g",
+        "--guest-port",
+        action="append",
+        metavar="[GUEST_ADDR:]GUEST_PORT:[HOST_ADDR:]HOST_PORT",
+        help="Expose host port HOST_PORT inside the guest at GUEST_ADDR:GUEST_PORT "
+        "(default GUEST_ADDR 10.0.2.101, HOST_ADDR 127.0.0.1; can be repeated). "
+        "Works without internet access.",
     )
     parser.add_argument(
         "--boot-timeout",
@@ -144,6 +158,41 @@ def _save_output_path(name: str) -> Path:
     return GLOBAL_SAVES_DIR / name
 
 
+def _parse_forward(spec: str, *, guest_to_host: bool) -> Forward:
+    """Parse a ``-p`` or ``-g`` spec into a :class:`Forward`.
+
+    Both flags share one shape, ``[SRC_ADDR:]SRC_PORT:[DST_ADDR:]DST_PORT``.
+    ``-p`` reads it as host then guest, ``-g`` as guest then host. Omitted
+    addresses take the endpoint defaults.
+
+    Raises ``ValueError`` with a user-facing message on malformed input.
+    """
+    from quicksand_core._types import Forward, Guest, Host
+
+    parts = spec.split(":")
+    try:
+        if len(parts) == 2:
+            src_addr, src_port, dst_addr, dst_port = None, parts[0], None, parts[1]
+        elif len(parts) == 3 and parts[0].isdigit():
+            src_addr, src_port, dst_addr, dst_port = None, parts[0], parts[1], parts[2]
+        elif len(parts) == 3:
+            src_addr, src_port, dst_addr, dst_port = parts[0], parts[1], None, parts[2]
+        elif len(parts) == 4:
+            src_addr, src_port, dst_addr, dst_port = parts
+        else:
+            raise ValueError("wrong number of fields")
+
+        if guest_to_host:
+            src = Guest(src_addr, int(src_port)) if src_addr else Guest(int(src_port))
+            dst = Host(dst_addr, int(dst_port)) if dst_addr else Host(int(dst_port))
+        else:
+            src = Host(src_addr, int(src_port)) if src_addr else Host(int(src_port))
+            dst = Guest(dst_addr, int(dst_port)) if dst_addr else Guest(int(dst_port))
+        return Forward(src, dst)
+    except ValueError as e:
+        raise ValueError(f"{spec} ({e}; expected [SRC_ADDR:]SRC_PORT:[DST_ADDR:]DST_PORT)") from e
+
+
 def cmd(args: argparse.Namespace) -> int:
     """Run an interactive shell in a sandbox."""
     return asyncio.run(_cmd_async(args))
@@ -171,23 +220,15 @@ async def _cmd_async(args: argparse.Namespace) -> int:
             host_path, guest_path = mount_str.split(":", 1)
             mounts.append(Mount(host=host_path, guest=guest_path))
 
-    # Parse port forwards
-    from quicksand_core._types import PortForward
+    # Parse port forwards (both directions share one list)
 
-    port_forwards: list[PortForward] = []
-    if args.port:
-        for pf_str in args.port:
-            if ":" not in pf_str:
-                print(
-                    f"Invalid port-forward format: {pf_str} (expected HOST:GUEST)",
-                    file=sys.stderr,
-                )
-                return 1
-            host_port, guest_port = pf_str.split(":", 1)
+    port_forwards: list[Forward] = []
+    for flag, specs in (("-p", args.port or []), ("-g", args.guest_port or [])):
+        for spec in specs:
             try:
-                port_forwards.append(PortForward(host=int(host_port), guest=int(guest_port)))
-            except ValueError:
-                print(f"Invalid port numbers: {pf_str}", file=sys.stderr)
+                port_forwards.append(_parse_forward(spec, guest_to_host=(flag == "-g")))
+            except ValueError as e:
+                print(f"Invalid {flag} forward: {e}", file=sys.stderr)
                 return 1
 
     # Resolve network mode

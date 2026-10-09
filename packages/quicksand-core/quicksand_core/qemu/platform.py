@@ -361,8 +361,9 @@ class PlatformConfig:
 
         hostfwd = f"hostfwd=tcp:127.0.0.1:{agent_port}-:{agent_port}"
 
-        for pf in config.port_forwards:
-            hostfwd += f",hostfwd=tcp:127.0.0.1:{pf.host}-:{pf.guest}"
+        for f in config.host_forwards:
+            guest_addr = f.guest.address or ""  # empty = the guest's own IP
+            hostfwd += f",hostfwd=tcp:{f.host.address}:{f.host.port}-{guest_addr}:{f.guest.port}"
 
         restrict = "off" if config.network_mode is NetworkMode.FULL else "on"
 
@@ -377,13 +378,18 @@ class PlatformConfig:
         if guestfwd_cmd is not None:
             guestfwd = f",guestfwd=tcp:{guestfwd_ip}:{guestfwd_port}-cmd:{guestfwd_cmd}"
         elif config.network_mode is NetworkMode.MOUNTS_ONLY and smb_port is not None:
-            import sys
+            guestfwd = self._relay_guestfwd(
+                guestfwd_ip, guestfwd_port, NetworkConstants.LOCALHOST, smb_port
+            )
 
-            relay_script = str(Path(__file__).resolve().parent.parent / "_tcp_relay.py")
-            guestfwd = (
-                f",guestfwd=tcp:{guestfwd_ip}:{guestfwd_port}-"
-                f"cmd:{sys.executable} {relay_script} "
-                f"{NetworkConstants.LOCALHOST} {smb_port}"
+        # User-requested guest forwards: host services exposed inside the guest.
+        # Each uses the same per-connection TCP relay as the SMB tunnel above
+        # rather than a ``-tcp:host:port`` chardev target, because a chardev
+        # target multiplexes every guest connection onto one host connection.
+        for f in config.guest_forwards:
+            assert f.guest.address is not None  # filled in by Forward.__post_init__
+            guestfwd += self._relay_guestfwd(
+                f.guest.address, f.guest.port, f.host.address, f.host.port
             )
 
         netdev_opts = f"user,id=net0,restrict={restrict},{hostfwd}{guestfwd}"
@@ -395,6 +401,22 @@ class PlatformConfig:
             "-device",
             f"{virtio_net},netdev=net0",
         ]
+
+    @staticmethod
+    def _relay_guestfwd(guest_ip: str, guest_port: int, host: str, host_port: int) -> str:
+        """Build a ``,guestfwd=...`` netdev option that relays to a host TCP port.
+
+        QEMU spawns one ``_tcp_relay.py`` process per guest connection
+        (inetd-style), so concurrent guest connections each get their own
+        host-side TCP connection and close independently.
+        """
+        import sys
+
+        relay_script = str(Path(__file__).resolve().parent.parent / "_tcp_relay.py")
+        return (
+            f",guestfwd=tcp:{guest_ip}:{guest_port}-"
+            f"cmd:{sys.executable} {relay_script} {host} {host_port}"
+        )
 
 
 @lru_cache(maxsize=1)

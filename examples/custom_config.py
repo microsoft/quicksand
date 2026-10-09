@@ -5,7 +5,7 @@ Example with custom configuration using UbuntuSandbox.
 
 import asyncio
 
-from quicksand import Mount, NetworkMode, PortForward, UbuntuSandbox
+from quicksand import Forward, Guest, Host, Mount, NetworkMode, UbuntuSandbox
 
 
 async def main():
@@ -17,7 +17,7 @@ async def main():
             Mount("/tmp/host-data", "/mnt/data", readonly=True),
         ],
         # Forward ports from guest to host
-        port_forwards=[PortForward(host=8080, guest=80)],
+        port_forwards=[Forward(Host(8080), Guest(80))],
         # Block internet access (recommended for untrusted code)
         network_mode=NetworkMode.MOUNTS_ONLY,
         # Boot timeout

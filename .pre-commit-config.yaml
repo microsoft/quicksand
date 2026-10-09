@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: sync
         name: sync
-        entry: uv sync
+        entry: uv sync --locked
         language: system
         pass_filenames: false
         always_run: true

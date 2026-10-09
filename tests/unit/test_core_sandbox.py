@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from quicksand_core import PortForward, Sandbox, SandboxConfig
+from quicksand_core import Forward, Guest, Host, Sandbox, SandboxConfig
 from quicksand_core._types import NetworkMode
 from quicksand_core.host import Accelerator, LinuxConfig
 from quicksand_core.host.quicksand_guest_agent_client import _retry_on_transient_error
@@ -163,13 +163,61 @@ class TestSandboxNetworkArgs:
         """Test port forwarding configuration."""
         config = SandboxConfig(
             image="ubuntu",
-            port_forwards=[PortForward(host=8080, guest=80), PortForward(host=8443, guest=443)],
+            port_forwards=[Forward(Host(8080), Guest(80)), Forward(Host(8443), Guest(443))],
         )
         platform_config = _create_test_platform_config()
 
         args = platform_config._build_network_args(config, 12345)
         assert "hostfwd=tcp:127.0.0.1:8080-:80" in args[1]
         assert "hostfwd=tcp:127.0.0.1:8443-:443" in args[1]
+
+    def test_host_to_guest_addresses(self, fake_qcow2):
+        """Explicit Host bind address and Guest destination address reach hostfwd."""
+        config = SandboxConfig(
+            image="ubuntu",
+            port_forwards=[Forward(Host(8080, "0.0.0.0"), Guest(80, "10.0.2.15"))],
+        )
+        platform_config = _create_test_platform_config()
+
+        args = platform_config._build_network_args(config, 12345)
+        assert "hostfwd=tcp:0.0.0.0:8080-10.0.2.15:80" in args[1]
+
+    def test_guest_to_host_forwards(self, fake_qcow2):
+        """Guest-to-host Forwards become per-connection guestfwd relay tunnels."""
+        config = SandboxConfig(
+            image="ubuntu",
+            network_mode=NetworkMode.MOUNTS_ONLY,
+            port_forwards=[
+                Forward(Host(8080), Guest(80)),
+                Forward(Guest(3128), Host(9090)),
+                Forward(Guest(5000, "10.0.2.102"), Host(5001, "localhost")),
+            ],
+        )
+        platform_config = _create_test_platform_config()
+
+        args = platform_config._build_network_args(config, 12345)
+        netdev = args[1]
+        assert "restrict=on" in netdev
+        assert "hostfwd=tcp:127.0.0.1:8080-:80" in netdev
+        assert "guestfwd=tcp:10.0.2.101:3128-cmd:" in netdev
+        assert "guestfwd=tcp:10.0.2.102:5000-cmd:" in netdev
+        assert "_tcp_relay.py 127.0.0.1 9090" in netdev
+        assert "_tcp_relay.py localhost 5001" in netdev
+        # Never the single-connection chardev form.
+        assert "-tcp:" not in netdev
+
+    def test_guest_to_host_coexists_with_smb_tunnel(self, fake_qcow2):
+        """A guest-to-host Forward does not displace the SMB mount tunnel."""
+        config = SandboxConfig(
+            image="ubuntu",
+            network_mode=NetworkMode.MOUNTS_ONLY,
+            port_forwards=[Forward(Guest(3128), Host(9090))],
+        )
+        platform_config = _create_test_platform_config()
+
+        args = platform_config._build_network_args(config, 12345, smb_port=4450)
+        assert "guestfwd=tcp:10.0.2.100:445-cmd:" in args[1]
+        assert "guestfwd=tcp:10.0.2.101:3128-cmd:" in args[1]
 
 
 class TestSandboxMountConfig:
