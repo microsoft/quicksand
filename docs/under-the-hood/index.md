@@ -158,7 +158,7 @@ All configuration is passed as keyword arguments to `Sandbox(...)`:
 | `memory` | Memory allocation (e.g., `"512M"`, `"2G"`) |
 | `cpus` | Number of virtual CPUs |
 | `mounts` | List of `Mount` for boot-time host directory sharing |
-| `port_forwards` | List of `PortForward(host=..., guest=...)` objects |
+| `port_forwards` | List of `Forward(src, dst)` objects. `Forward(Host(port), Guest(port))` exposes a guest port on the host; `Forward(Guest(port), Host(port))` exposes a host service inside the guest. `PortForward(host, guest)` is a deprecated alias for the first form. |
 | `save` | Auto-save name on stop (on `Sandbox.__init__`, not `SandboxConfig`) |
 | `network_mode` | `NetworkMode` enum: `NONE`, `MOUNTS_ONLY` (default), `FULL` |
 | `extra_qemu_args` | Additional QEMU command line arguments |

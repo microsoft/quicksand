@@ -5,7 +5,7 @@
 ## Quick start
 
 ```python
-from quicksand import Sandbox, Mount, NetworkMode, PortForward
+from quicksand import Sandbox, Mount, NetworkMode, Forward, Host, Guest
 
 async with Sandbox(image="ubuntu") as sb:
     result = await sb.execute("uname -a")
@@ -26,7 +26,10 @@ sb = Sandbox(
     cpus=4,                      # CPU cores (default: 1)
     enable_display=True,         # Enable GUI for screenshots/input (default: False)
     network_mode=NetworkMode.FULL,  # Internet access (default: MOUNTS_ONLY)
-    port_forwards=[PortForward(host=8080, guest=80)],
+    port_forwards=[              # Either direction, one list
+        Forward(Host(8080), Guest(80)),    # guest:80 reachable at host:8080
+        Forward(Guest(3128), Host(8080)),  # host:8080 reachable at 10.0.2.101:3128
+    ],
     mounts=[                     # Share host directories into the VM
         Mount("/host/code", "/mnt/code"),
     ],

@@ -64,13 +64,16 @@ await sb.unmount(handle)
 
 ### Configure networking
 
-Sandboxes are network-isolated by default. Opt in to internet access and port forwarding with `NetworkMode.FULL`.
+Sandboxes are network-isolated by default. Opt in to internet access with `NetworkMode.FULL`. Port forwards work in either direction: `Forward(Host(...), Guest(...))` exposes a guest port on the host, and `Forward(Guest(...), Host(...))` exposes a host service inside the guest, even when the sandbox is otherwise offline.
 
 ```python
 async with Sandbox(
     image="ubuntu",
     network_mode=NetworkMode.FULL,
-    port_forwards=[PortForward(host=8080, guest=80)],
+    port_forwards=[
+        Forward(Host(8080), Guest(80)),    # host:8080 -> guest:80
+        Forward(Guest(3128), Host(8080)),  # guest 10.0.2.101:3128 -> host:8080
+    ],
 ) as sb:
     ...
 ```
@@ -128,8 +131,8 @@ Sandbox(
     mounts=[Mount("/host", "/guest")],
     # NONE, MOUNTS_ONLY (default), or FULL internet access
     network_mode=NetworkMode.FULL,
-    # Forward host TCP ports into the guest
-    port_forwards=[PortForward(host=8080, guest=80)],
+    # Forward TCP ports in either direction (host -> guest, guest -> host)
+    port_forwards=[Forward(Host(8080), Guest(80)), Forward(Guest(3128), Host(8080))],
     # Expand the guest filesystem on boot
     disk_size="10G",
     # Attach virtual GPU, keyboard, and mouse for screenshot/type_text/mouse control

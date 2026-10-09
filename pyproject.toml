@@ -91,6 +91,7 @@ fix = ["fix:format", "fix:code"]
 "test:integration-mounts-readwrite" = "pytest tests/integration/mounts/readwrite -v --timeout=300"
 "test:integration-mounts-multiple" = "pytest tests/integration/mounts/multiple -v --timeout=300"
 "test:integration-network-unrestricted" = "pytest tests/integration/network/unrestricted -v --timeout=300"
+"test:integration-network-guest-forward" = "pytest tests/integration/network/guest_forward -v --timeout=300"
 "test:integration-checkpoint" = "pytest tests/integration/checkpoint -v --timeout=300"
 "test:integration-dev" = "pytest tests/integration/dev -v --timeout=600 -m docker"
 "test:no-docker" = "pytest tests/ -x -v --timeout=120 -k 'not docker'"

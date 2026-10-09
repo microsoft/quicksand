@@ -12,14 +12,16 @@ Platform and Architecture enums are in platform.py.
 
 from __future__ import annotations
 
+import ipaddress
 import subprocess
 import sys
-from dataclasses import dataclass
+import warnings
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, Protocol, TypedDict, runtime_checkable
+from typing import Annotated, Literal, Protocol, TypedDict, overload, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .host import Accelerator
 
@@ -89,12 +91,266 @@ class NetworkMode(StrEnum):
 # =============================================================================
 
 
-@dataclass
-class PortForward:
-    """Forward a TCP port from the host into the guest."""
+# Virtual IP inside the slirp network that guest-to-host forwards listen on by
+# default. Kept separate from the SMB tunnel IP (10.0.2.100) so the two never
+# collide. Mirrored as ``NetworkConstants.GUESTFWD_DEFAULT_IP``.
+_GUESTFWD_DEFAULT_IP = "10.0.2.101"
+_LOOPBACK = "127.0.0.1"
 
-    host: int
-    guest: int
+
+def _endpoint_args(
+    owner: str, args: tuple[int | str | None, ...], port: int | None, address: str | None
+) -> tuple[int, str | None]:
+    """Normalise the flexible endpoint constructor forms to ``(port, address)``.
+
+    Accepted: ``(port)``, ``("addr", port)``, ``(port, "addr")``,
+    ``("addr:port")``, and the keywords ``port=``/``address=``. A positional
+    ``None`` address is ignored so callers can pass an optional address through.
+    """
+    if len(args) > 2:
+        raise TypeError(f"{owner}() takes at most 2 positional arguments ({len(args)} given)")
+    for arg in args:
+        if arg is None:
+            continue
+        if isinstance(arg, bool) or not isinstance(arg, int | str):
+            raise TypeError(
+                f"{owner}() positional arguments must be an int port or a str address, "
+                f"got {type(arg).__name__}"
+            )
+        if isinstance(arg, int):
+            if port is not None:
+                raise TypeError(f"{owner}() got multiple values for port")
+            port = arg
+            continue
+        if address is not None:
+            raise TypeError(f"{owner}() got multiple values for address")
+        if ":" in arg:
+            addr, _, port_str = arg.rpartition(":")
+            if port is not None:
+                raise TypeError(f"{owner}() got multiple values for port")
+            if not addr or not port_str.isdigit():
+                raise ValueError(f"{owner}: expected 'address:port', got {arg!r}")
+            port = int(port_str)
+            address = addr
+        else:
+            address = arg
+    if port is None:
+        raise TypeError(
+            f"{owner}() missing a port; use {owner}(port), {owner}('addr', port), "
+            f"{owner}('addr:port') or {owner}(port=...)"
+        )
+    return port, address
+
+
+@dataclass(init=False)
+class Host:
+    """A TCP endpoint on the host machine.
+
+    Construct with any of::
+
+        Host(8080)                  # 127.0.0.1:8080
+        Host("0.0.0.0", 8080)
+        Host("0.0.0.0:8080")
+        Host(port=8080, address="0.0.0.0")
+
+    As the source of a :class:`Forward`, ``address`` is the interface QEMU
+    listens on. The default ``127.0.0.1`` keeps the port reachable only from
+    the host itself; ``0.0.0.0`` exposes it to the network. As the destination,
+    ``address`` is where the tunnel connects and may be a hostname.
+    """
+
+    port: int
+    address: str = _LOOPBACK
+    kind: Literal["host"] = field(default="host", repr=False, compare=False)
+    """Discriminator for dict/JSON input. Not meant to be set by callers."""
+
+    @overload
+    def __init__(self, port: int, /, address: str = ...) -> None: ...
+    @overload
+    def __init__(self, address: str, port: int, /) -> None: ...
+    @overload
+    def __init__(self, address_and_port: str, /) -> None: ...
+    @overload
+    def __init__(self, address: str, /, *, port: int) -> None: ...
+    @overload
+    def __init__(self, *, port: int, address: str = ...) -> None: ...
+
+    def __init__(
+        self, *args: int | str | None, port: int | None = None, address: str | None = None
+    ) -> None:
+        self.port, addr = _endpoint_args("Host", args, port, address)
+        self.address = addr if addr is not None else _LOOPBACK
+        self.kind = "host"
+        self.__post_init__()
+
+    def __post_init__(self) -> None:
+        _check_port("Host", self.port)
+
+
+@dataclass(init=False)
+class Guest:
+    """A TCP endpoint inside the guest VM.
+
+    Construct with any of::
+
+        Guest(80)                   # address chosen by the Forward direction
+        Guest("10.0.2.102", 80)
+        Guest("10.0.2.102:80")
+        Guest(port=80, address="10.0.2.102")
+
+    As the destination of a :class:`Forward`, ``address`` defaults to the
+    guest's own IP (left to QEMU) and rarely needs setting. As the source, it
+    is a virtual address on the slirp network (``10.0.2.0/24``) that the guest
+    dials to reach the host; the default ``10.0.2.101`` is filled in by
+    :class:`Forward`. Pick a different address only to run several forwards on
+    the same guest port.
+    """
+
+    port: int
+    address: str | None = None
+    kind: Literal["guest"] = field(default="guest", repr=False, compare=False)
+    """Discriminator for dict/JSON input. Not meant to be set by callers."""
+
+    @overload
+    def __init__(self, port: int, /, address: str | None = ...) -> None: ...
+    @overload
+    def __init__(self, address: str, port: int, /) -> None: ...
+    @overload
+    def __init__(self, address_and_port: str, /) -> None: ...
+    @overload
+    def __init__(self, address: str, /, *, port: int) -> None: ...
+    @overload
+    def __init__(self, *, port: int, address: str | None = ...) -> None: ...
+
+    def __init__(
+        self, *args: int | str | None, port: int | None = None, address: str | None = None
+    ) -> None:
+        self.port, self.address = _endpoint_args("Guest", args, port, address)
+        self.kind = "guest"
+        self.__post_init__()
+
+    def __post_init__(self) -> None:
+        _check_port("Guest", self.port)
+
+
+Endpoint = Annotated[Host | Guest, Field(discriminator="kind")]
+"""Either end of a :class:`Forward`."""
+
+
+@dataclass
+class Forward:
+    """Forward TCP connections between the host and the guest, in either direction.
+
+    ``src`` is where connections are accepted and ``dst`` is where they are
+    delivered. One end must be a :class:`Host` and the other a :class:`Guest`.
+
+    Host to guest (QEMU ``hostfwd``) exposes a service running in the VM on a
+    host port::
+
+        Forward(Host(8080), Guest(80))             # host:8080 -> guest:80
+        Forward(Host("0.0.0.0:8080"), Guest(80))   # also reachable from the LAN
+
+    Guest to host (QEMU ``guestfwd``) exposes a host service inside the VM. It
+    works in every network mode that has a NIC, including ``MOUNTS_ONLY`` where
+    all other outbound traffic is blocked, so a host-side HTTP proxy or API can
+    be offered to an otherwise offline sandbox::
+
+        Forward(Guest(3128), Host(8080))                 # guest 10.0.2.101:3128 -> host:8080
+        Forward(Guest("10.0.2.102:80"), Host(5001))      # a second service on guest port 80
+        Forward(Guest(5432), Host("db.internal", 5432))  # pinhole to one remote service
+    """
+
+    src: Endpoint
+    dst: Endpoint
+
+    def __post_init__(self) -> None:
+        if isinstance(self.src, Host) and isinstance(self.dst, Guest):
+            self._validate_host_to_guest(self.src, self.dst)
+        elif isinstance(self.src, Guest) and isinstance(self.dst, Host):
+            if self.src.address is None:
+                self.src = Guest(self.src.port, _GUESTFWD_DEFAULT_IP)
+            self._validate_guest_to_host(self.src, self.dst)
+        else:
+            raise ValueError(
+                "Forward must connect a Host endpoint to a Guest endpoint, got "
+                f"src={type(self.src).__name__} and dst={type(self.dst).__name__}"
+            )
+
+    @property
+    def host(self) -> Host:
+        """The :class:`Host` end, whichever side it is on."""
+        end = self.src if isinstance(self.src, Host) else self.dst
+        assert isinstance(end, Host)  # guaranteed by __post_init__
+        return end
+
+    @property
+    def guest(self) -> Guest:
+        """The :class:`Guest` end, whichever side it is on."""
+        end = self.src if isinstance(self.src, Guest) else self.dst
+        assert isinstance(end, Guest)  # guaranteed by __post_init__
+        return end
+
+    @property
+    def host_to_guest(self) -> bool:
+        """True for ``Forward(Host, Guest)``, False for ``Forward(Guest, Host)``."""
+        return isinstance(self.src, Host)
+
+    @staticmethod
+    def _validate_host_to_guest(src: Host, dst: Guest) -> None:
+        _check_ipv4("Host.address", src.address, "when the host is the source (bind address)")
+        if dst.address is not None:
+            _check_ipv4("Guest.address", dst.address, "when the guest is the destination")
+
+    @staticmethod
+    def _validate_guest_to_host(src: Guest, dst: Host) -> None:
+        assert src.address is not None
+        addr = _check_ipv4("Guest.address", src.address, "when the guest is the source")
+
+        network = ipaddress.IPv4Network(
+            f"{NetworkConstants.QEMU_SLIRP_GATEWAY}/{NetworkConstants.QEMU_SLIRP_NETMASK}",
+            strict=False,
+        )
+        if addr not in network:
+            raise ValueError(
+                f"Guest.address must be inside the slirp network {network} when the guest "
+                f"is the source, got {src.address}"
+            )
+
+        reserved = {
+            NetworkConstants.QEMU_SLIRP_GATEWAY: "the slirp gateway",
+            NetworkConstants.QEMU_SLIRP_DNS: "the slirp DNS forwarder",
+            NetworkConstants.QEMU_SLIRP_GUEST_IP: "the guest itself",
+        }
+        if src.address in reserved:
+            raise ValueError(f"Guest.address {src.address} is reserved for {reserved[src.address]}")
+        del dst  # any host address or hostname is fine as a connect target
+
+
+def _check_port(owner: str, port: int) -> None:
+    if not 1 <= port <= 65535:
+        raise ValueError(f"{owner}.port must be in 1..65535, got {port}")
+
+
+def _check_ipv4(name: str, value: str, context: str) -> ipaddress.IPv4Address:
+    try:
+        return ipaddress.IPv4Address(value)
+    except ValueError as e:
+        raise ValueError(f"{name} must be an IPv4 address {context}, got {value!r}") from e
+
+
+def PortForward(host: int, guest: int) -> Forward:
+    """Deprecated. Use ``Forward(Host(host), Guest(guest))``.
+
+    Kept so existing ``PortForward(host=..., guest=...)`` calls keep working.
+    Emits a :class:`DeprecationWarning`.
+    """
+    warnings.warn(
+        "PortForward is deprecated and will be removed in a future release; "
+        "use Forward(Host(port), Guest(port)) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return Forward(Host(host), Guest(guest))
 
 
 # =============================================================================
@@ -294,6 +550,7 @@ class NetworkConstants:
     GUEST_SMB_PORT = 445  # Standard SMB port for CIFS mounts
     GUESTFWD_SMB_IP = "10.0.2.100"  # Virtual IP for guestfwd SMB tunnel (MOUNTS_ONLY mode)
     GUESTFWD_SMB_PORT = 445  # SMB port on the guestfwd virtual IP
+    GUESTFWD_DEFAULT_IP = _GUESTFWD_DEFAULT_IP  # Default Guest source address in Forward
 
 
 # =============================================================================
@@ -599,7 +856,10 @@ class SandboxConfig(BaseModel):
     memory: str = "512M"
     cpus: int = 1
     mounts: list[Mount] = []
-    port_forwards: list[PortForward] = []
+    port_forwards: list[Forward] = []
+    """TCP forwards in either direction. ``Forward(Host(...), Guest(...))``
+    exposes a guest port on the host; ``Forward(Guest(...), Host(...))`` exposes
+    a host service inside the guest."""
     network_mode: NetworkMode = NetworkMode.MOUNTS_ONLY
     extra_qemu_args: list[str] = []
     boot_timeout: float = Timeouts.BOOT_DEFAULT
@@ -621,6 +881,59 @@ class SandboxConfig(BaseModel):
         return v
 
     @property
+    def host_forwards(self) -> list[Forward]:
+        """The host-to-guest entries of :attr:`port_forwards` (QEMU ``hostfwd``)."""
+        return [f for f in self.port_forwards if f.host_to_guest]
+
+    @property
+    def guest_forwards(self) -> list[Forward]:
+        """The guest-to-host entries of :attr:`port_forwards` (QEMU ``guestfwd``)."""
+        return [f for f in self.port_forwards if not f.host_to_guest]
+
+    @model_validator(mode="after")
+    def _validate_port_forwards(self) -> SandboxConfig:
+        if not self.port_forwards:
+            return self
+
+        host_binds: set[tuple[str, int]] = set()
+        for f in self.host_forwards:
+            key = (f.host.address, f.host.port)
+            if key in host_binds:
+                raise ValueError(
+                    f"Duplicate host-to-guest Forward listening on {f.host.address}:"
+                    f"{f.host.port}; each host address/port may be forwarded only once."
+                )
+            host_binds.add(key)
+
+        guest_forwards = self.guest_forwards
+        if not guest_forwards:
+            return self
+
+        if self.network_mode is NetworkMode.NONE:
+            raise ValueError(
+                "Forward(Guest, Host) requires network_mode=FULL or MOUNTS_ONLY; "
+                "NetworkMode.NONE has no network device to tunnel through."
+            )
+
+        smb_tunnel = (NetworkConstants.GUESTFWD_SMB_IP, NetworkConstants.GUESTFWD_SMB_PORT)
+        seen: set[tuple[str, int]] = set()
+        for f in guest_forwards:
+            assert f.guest.address is not None  # filled in by Forward.__post_init__
+            key = (f.guest.address, f.guest.port)
+            if key == smb_tunnel:
+                raise ValueError(
+                    f"Forward from Guest {f.guest.address}:{f.guest.port} collides with the "
+                    "CIFS mount tunnel; choose another guest address or port."
+                )
+            if key in seen:
+                raise ValueError(
+                    f"Duplicate guest-to-host Forward from {f.guest.address}:{f.guest.port}; "
+                    "each guest address/port may be forwarded only once."
+                )
+            seen.add(key)
+        return self
+
+    @property
     def memory_bytes(self) -> int:
         """Configured guest RAM in bytes."""
         from .utils.memory import parse_memory_size
@@ -640,7 +953,7 @@ class SandboxConfigParams(TypedDict, total=False):
     memory: str
     cpus: int
     mounts: list[Mount]
-    port_forwards: list[PortForward]
+    port_forwards: list[Forward]
     network_mode: NetworkMode
     extra_qemu_args: list[str]
     boot_timeout: float
