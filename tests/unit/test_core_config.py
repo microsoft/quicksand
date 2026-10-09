@@ -176,7 +176,7 @@ class TestForwardTypes:
     @pytest.mark.parametrize(
         ("make", "exc", "match"),
         [
-            (lambda: Host(), TypeError, "missing a port"),  # ty: ignore[no-matching-overload]
+            (Host, TypeError, "missing a port"),
             (lambda: Host("0.0.0.0"), TypeError, "missing a port"),
             (lambda: Host("a:b"), ValueError, "expected 'address:port'"),
             (lambda: Host(":80"), ValueError, "expected 'address:port'"),
