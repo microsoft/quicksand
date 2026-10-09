@@ -200,23 +200,34 @@ class TestSandboxMountConfig:
 
 
 class TestWhpxAccelerator:
-    """Regression: WHPX must always get kernel-irqchip=off.
+    """Regression: x86_64 WHPX must always get kernel-irqchip=off.
 
     WHPX's in-kernel irqchip + the guest's noapic boot param delivers device
-    interrupts unreliably (CIFS mounts hang). kernel-irqchip=off fixes it. This
-    was previously gated on nested_virt (baseboard == Microsoft), but bare-metal
-    Windows hosts need it too, so it must be applied for WHPX regardless.
+    interrupts unreliably (CIFS mounts hang). kernel-irqchip=off fixes it on
+    x86_64. This was previously gated on nested_virt (baseboard == Microsoft),
+    but bare-metal Windows x86_64 hosts need it too. Arm WHPX accepts only
+    kernel-irqchip=on, so other architectures keep a bare accel argument.
     """
 
-    def _build(self, fake_qcow2, *, nested_virt: bool):
+    def _build(
+        self,
+        fake_qcow2,
+        *,
+        nested_virt: bool,
+        arch=None,
+        accelerator: Accelerator | None = Accelerator.WHPX,
+        qemu_binary: str = "/usr/bin/qemu-system-x86_64",
+    ):
         from quicksand_core.host import WindowsConfig
         from quicksand_core.qemu.arch import X86_64Config
 
-        platform_config = PlatformConfig(arch=X86_64Config(), os=WindowsConfig())
+        if arch is None:
+            arch = X86_64Config()
+        platform_config = PlatformConfig(arch=arch, os=WindowsConfig())
         return platform_config.build_qemu_command(
             config=SandboxConfig(image="ubuntu"),
             runtime_info=RuntimeInfo(
-                qemu_binary=Path("/usr/bin/qemu-system-x86_64"),
+                qemu_binary=Path(qemu_binary),
                 qemu_img=Path("/usr/bin/qemu-img"),
                 runtime_dir=Path("/usr"),
             ),
@@ -225,7 +236,7 @@ class TestWhpxAccelerator:
             overlay_path=Path(str(fake_qcow2)),
             agent_port=12345,
             agent_token="test_token",
-            accelerator=Accelerator.WHPX,
+            accelerator=accelerator,
             nested_virt=nested_virt,
         )
 
@@ -239,6 +250,52 @@ class TestWhpxAccelerator:
         cmd = self._build(fake_qcow2, nested_virt=True)
         accel_val = cmd[cmd.index("-accel") + 1]
         assert accel_val == "whpx,kernel-irqchip=off"
+
+    def test_arm64_whpx_omits_kernel_irqchip(self, fake_qcow2):
+        """ARM64 WHPX (qemu-system-aarch64) rejects kernel-irqchip=off."""
+        from quicksand_core.qemu.arch import ARM64Config
+
+        for nested_virt in (False, True):
+            cmd = self._build(
+                fake_qcow2,
+                nested_virt=nested_virt,
+                arch=ARM64Config(),
+                accelerator=Accelerator.WHPX,
+                qemu_binary="/usr/bin/qemu-system-aarch64",
+            )
+            accel_val = cmd[cmd.index("-accel") + 1]
+            assert accel_val == "whpx"
+            assert "kernel-irqchip" not in " ".join(cmd)
+
+    def test_other_accelerators_stay_bare(self, fake_qcow2):
+        """KVM, HVF, and TCG stay bare; accelerator=None omits -accel."""
+        from quicksand_core.qemu.arch import ARM64Config, X86_64Config
+
+        cases = (
+            (X86_64Config(), "/usr/bin/qemu-system-x86_64"),
+            (ARM64Config(), "/usr/bin/qemu-system-aarch64"),
+        )
+        for arch, qemu_binary in cases:
+            for accel in (Accelerator.KVM, Accelerator.HVF, Accelerator.TCG):
+                cmd = self._build(
+                    fake_qcow2,
+                    nested_virt=False,
+                    arch=arch,
+                    accelerator=accel,
+                    qemu_binary=qemu_binary,
+                )
+                accel_val = cmd[cmd.index("-accel") + 1]
+                assert accel_val == accel.value
+                assert "irqchip" not in " ".join(cmd)
+
+            cmd = self._build(
+                fake_qcow2,
+                nested_virt=False,
+                arch=arch,
+                accelerator=None,
+                qemu_binary=qemu_binary,
+            )
+            assert "-accel" not in cmd
 
 
 class TestSandboxContextManager:
