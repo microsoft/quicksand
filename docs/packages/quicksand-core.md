@@ -2,7 +2,7 @@
 
 This package provides the core implementation for the [quicksand](https://github.com/microsoft/quicksand) VM harness.
 
-It includes the abstractions for running VMs that AI agents can interact with, including command execution, file operations, and state checkpointing. Most users should install `quicksand` instead, which includes pre-built images.
+It includes the abstractions for running VMs that AI agents can interact with, including command execution, file operations, and state checkpointing. Most users should install `quick-sandbox` with QEMU and image extras instead.
 
 ## Installation
 
@@ -15,7 +15,7 @@ pip install 'quick-sandbox[qemu,ubuntu]'
 For core-only (no bundled images):
 
 ```bash
-pip install quick-sandbox
+pip install quicksand-core
 ```
 
 ## Core Exports
@@ -26,6 +26,7 @@ This package exports the core building blocks:
 from quicksand_core import (
     # Main classes
     Sandbox,
+    SandboxUser,
     Mount,
     ExecuteResult,
     # Save support
@@ -69,6 +70,8 @@ asyncio.run(main())
 
 - **Real VM isolation**: Hypervisor-level isolation (KVM, HVF, WHPX)
 - **Cross-platform**: Linux, macOS, Windows
+- **Streaming commands**: Incremental stdin and output, with backpressure, EOF, and cancellation
+- **Guest users**: Create/delete OS accounts and run commands with user-specific identity and home directories inside one VM
 - **Platform abstraction**: Automatic detection of accelerators and machine types
 - **Save and load**: Save VM disk state to a directory and load it on any machine
 - **File sharing**: CIFS mounts via `quicksand-smb` (pure-Python SMB3 server — a subprocess via QEMU guestfwd on macOS/Linux, an in-process loopback TCP listener on Windows with no admin rights required)
@@ -76,9 +79,13 @@ asyncio.run(main())
   - io_uring disk AIO (~50% lower latency on Linux)
   - IOThreads for better concurrent disk I/O (all platforms)
 
+Streaming stdin and guest-user APIs require `quicksand-ubuntu` or
+`quicksand-alpine` 0.10.0 or newer, or a custom image rebuilt with the updated
+guest agent. Updating the host package does not update saved guest images.
+
 ## For Most Users
 
-Install `quicksand` with a bundled image for zero-configuration usage:
+Install `quick-sandbox` with a bundled image for zero-configuration usage:
 
 ```bash
 pip install 'quick-sandbox[qemu,ubuntu]'

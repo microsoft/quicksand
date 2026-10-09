@@ -31,6 +31,28 @@ def get_agent_source_dir() -> Path:
     return AGENT_SOURCE_DIR
 
 
+def _agent_source_hash() -> str:
+    """Hash of the Rust agent source (Cargo manifests + all .rs files).
+
+    Folded into the image cache key so that changes to the agent — which the
+    Dockerfile compiles but does not itself reference — invalidate cached
+    images. Without this, an agent-only change reuses a stale qcow2.
+    """
+    h = hashlib.sha256()
+    if AGENT_SOURCE_DIR.exists():
+        paths = sorted(
+            p
+            for p in AGENT_SOURCE_DIR.rglob("*")
+            if p.is_file()
+            and "target" not in p.relative_to(AGENT_SOURCE_DIR).parts
+            and (p.suffix == ".rs" or p.name in ("Cargo.toml", "Cargo.lock"))
+        )
+        for p in paths:
+            h.update(p.relative_to(AGENT_SOURCE_DIR).as_posix().encode())
+            h.update(p.read_bytes())
+    return h.hexdigest()
+
+
 def build_image(
     dockerfile: str | Path,
     output_path: Path | None = None,
@@ -79,15 +101,35 @@ def build_image(
     dockerfile_content = dockerfile_path.read_text()
     context_dir = dockerfile_path.parent
 
-    # Compute hash for caching
-    content_hash = hashlib.sha256(dockerfile_content.encode()).hexdigest()[:16]
+    # Compute hash for caching. Includes the agent source because the
+    # Dockerfile compiles the agent from a build-context copy that the
+    # Dockerfile text doesn't reference — so agent changes must bust the cache.
+    content_hash = hashlib.sha256(
+        dockerfile_content.encode() + _agent_source_hash().encode()
+    ).hexdigest()[:16]
 
+    explicit_output = output_path is not None
     if output_path is None:
         output_path = cache / f"custom-{content_hash}.qcow2"
 
+    # A sidecar records the content hash of the inputs (Dockerfile + agent
+    # source) that produced ``output_path``. A caller-supplied output path has
+    # a fixed name, so without the sidecar a stale image (e.g. built before an
+    # agent change) would be silently reused. The default ``custom-<hash>``
+    # path already encodes the hash in its name, so existence alone proves
+    # freshness there.
+    hash_sidecar = output_path.with_name(output_path.name + ".buildhash")
+
     # Check cache
     if output_path.exists():
-        if force:
+        if explicit_output:
+            cached_hash = hash_sidecar.read_text().strip() if hash_sidecar.exists() else None
+            stale = cached_hash != content_hash
+        else:
+            stale = False
+        if force or stale:
+            reason = "forced" if force else "inputs changed"
+            log.info("Rebuilding image (%s): %s", reason, output_path)
             output_path.unlink()
         else:
             log.info("Using cached image: %s", output_path)
@@ -128,6 +170,8 @@ def build_image(
                 _remove_docker_image(tag)
 
         log.info("[5/5] Done!")
+        # Record the inputs' hash so a later build can detect staleness.
+        hash_sidecar.write_text(content_hash)
         final_size_mb = output_path.stat().st_size / (1024 * 1024)
         log.info("Output: %s (%.1f MB)", output_path, final_size_mb)
 

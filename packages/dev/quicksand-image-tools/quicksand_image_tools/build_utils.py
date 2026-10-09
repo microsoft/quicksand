@@ -6,11 +6,51 @@ previously duplicated across every ``hatch_build.py`` in the monorepo.
 
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import sysconfig
+from collections.abc import Awaitable, Callable
 
 _X86_NAMES = {"x86_64", "amd64", "x64"}
 _ARM_NAMES = {"arm64", "aarch64"}
+
+_PYTHON_INDEX_VARIABLES = (
+    "PIP_INDEX_URL",
+    "PIP_EXTRA_INDEX_URL",
+    "UV_DEFAULT_INDEX",
+    "UV_INDEX_URL",
+    "UV_EXTRA_INDEX_URL",
+)
+
+
+async def run_python_install(
+    shell: Callable[..., Awaitable[None]],
+    command: str,
+    *,
+    timeout: float = 300,
+) -> None:
+    """Run a Python installer in a Unix guest using the host's package indexes.
+
+    The guest needs Python 3 and a stdin-capable agent. Index settings apply only
+    to this command and travel over stdin, not command arguments or guest config.
+    """
+    index_env = {name: os.environ[name] for name in _PYTHON_INDEX_VARIABLES if name in os.environ}
+    if not index_env:
+        await shell(command, timeout=timeout)
+        return
+
+    # URLs can contain credentials: pass them through stdin, not command arguments.
+    launcher = (
+        "import json,os,sys;"
+        "os.environ.update(json.load(sys.stdin));"
+        "os.execl('/bin/sh','sh','-c',sys.argv[1])"
+    )
+    await shell(
+        f"python3 -c {shlex.quote(launcher)} {shlex.quote(command)}",
+        stdin=json.dumps(index_env).encode(),
+        timeout=timeout,
+    )
 
 
 def get_image_arch() -> str:

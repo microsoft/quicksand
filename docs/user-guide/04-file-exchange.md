@@ -25,6 +25,35 @@ async with Sandbox(
 
 Files appear inside the VM at the specified guest path. Changes to non-readonly mounts are visible on both sides immediately.
 
+### Git repositories on CIFS mounts
+
+CIFS mounts present synthesized Unix permissions rather than each host file's
+executable bit. As a result, `git status` inside the guest can report mode-only
+changes for otherwise unchanged files.
+
+Disable executable-bit comparisons for Git commands against the mounted
+repository:
+
+```python
+result = await sb.execute("git -c core.filemode=false -C /mnt/code status")
+```
+
+The `-c` option applies only to that command; it does not change the host
+repository's Git configuration. Content changes are still reported, but
+executable-bit changes are ignored.
+
+### File locking on CIFS mounts
+
+The bundled SMB server does not implement server-side byte-range locks. Quicksand
+mounts its shares with `nobrl`, allowing `flock` and SQLite to use local locking
+inside the guest instead.
+
+These locks coordinate processes using the same mount in one sandbox. They do
+not coordinate with host processes, other sandboxes, or independent mounts of
+the same host directory. Do not concurrently access a writable SQLite database
+from those locations. The optional native SMB backend retains server-side
+locking.
+
 ## Dynamic hot-mounts
 
 Share a directory into an already-running sandbox:

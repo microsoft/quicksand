@@ -494,7 +494,8 @@ quicksand install ubuntu          # Ubuntu 24.04 headless
 quicksand install alpine          # Alpine 3.23 headless
 quicksand install alpine-desktop  # Alpine 3.23 + Xfce4
 quicksand install ubuntu-desktop  # Ubuntu 24.04 + Xfce4
-quicksand install all             # everything (QEMU + all images + dev tools)
+# QEMU + all images + dev tools
+quicksand install qemu ubuntu alpine ubuntu-desktop alpine-desktop agent cua dev
 ```
 
 Each image package provides:

@@ -16,6 +16,7 @@ import ipaddress
 import subprocess
 import sys
 import warnings
+from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -498,8 +499,12 @@ class QuicksandGuestAgentMethod(StrEnum):
 
     EXECUTE = "execute"
     EXECUTE_STREAM = "execute_stream"
+    STDIN = "stdin"
+    CANCEL = "cancel"
     PING = "ping"
     AUTHENTICATE = "authenticate"
+    CREATE_USER = "create_user"
+    DELETE_USER = "delete_user"
 
 
 # =============================================================================
@@ -658,6 +663,8 @@ class GuestCommands:
 # Execute Protocol Types
 # =============================================================================
 
+StdinSource = AsyncIterable[bytes] | bytes | str
+
 
 @dataclass
 class ExecuteParams:
@@ -668,6 +675,7 @@ class ExecuteParams:
     shell: str
     cwd: str | None = None
     exclusive: bool = False
+    user: str | None = None
 
 
 @dataclass

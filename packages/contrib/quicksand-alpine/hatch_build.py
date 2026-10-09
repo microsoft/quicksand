@@ -42,9 +42,9 @@ class AlpineImageBuildHook(BuildHookInterface):
         image_path = images_dir / f"alpine-{distro_version}-{arch}.qcow2"
         dockerfile_path = Path(self.root) / "quicksand_alpine" / "docker" / "Dockerfile"
 
-        if not image_path.exists():
-            self.app.display_info(f"Image not found: {image_path.name}, building...")
-            self._build_image(dockerfile_path, image_path)
+        # build_image checks the Dockerfile and agent-source hash before reusing an image.
+        self.app.display_info(f"Ensuring image is up to date: {image_path.name}")
+        self._build_image(dockerfile_path, image_path)
 
         self.app.display_info(f"Including image: {image_path}")
 

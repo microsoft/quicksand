@@ -855,7 +855,9 @@ class RuntimeBuildHook(BuildHookInterface):
     _WINDOWS_QEMU_URL = f"https://qemu.weilnetz.de/w64/2026/{_WINDOWS_QEMU_INSTALLER}"
 
     _WINDOWS_ARM64_QEMU_INSTALLER = "qemu-arm-setup-20260401.exe"
-    _WINDOWS_ARM64_QEMU_URL = f"https://qemu.weilnetz.de/aarch64/{_WINDOWS_ARM64_QEMU_INSTALLER}"
+    _WINDOWS_ARM64_QEMU_URL = (
+        f"https://qemu.weilnetz.de/aarch64/2026/{_WINDOWS_ARM64_QEMU_INSTALLER}"
+    )
 
     def _ensure_qemu_installed(self, qemu_name: str) -> None:
         """Install QEMU if it is not already on PATH.
@@ -1192,4 +1194,4 @@ class RuntimeBuildHook(BuildHookInterface):
 
         # Mark as platform-specific wheel
         if version != "editable":
-            bundler.set_platform_wheel_tag(build_data)
+            bundler.set_platform_wheel_tag(build_data, bin_dir=bin_dir)

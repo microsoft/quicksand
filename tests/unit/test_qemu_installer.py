@@ -2,14 +2,35 @@
 
 from __future__ import annotations
 
+import runpy
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from quicksand_core.host.arch import Architecture
+from quicksand_core.qemu import installer
 from quicksand_core.qemu.installer import (
     ensure_runtime,
     install_qemu,
 )
+
+
+@pytest.mark.parametrize(
+    ("constant", "expected"),
+    [
+        ("WINDOWS_QEMU_URL", "https://qemu.weilnetz.de/w64/2026/qemu-w64-setup-20260324.exe"),
+        (
+            "WINDOWS_ARM64_QEMU_URL",
+            "https://qemu.weilnetz.de/aarch64/2026/qemu-arm-setup-20260401.exe",
+        ),
+    ],
+)
+def test_windows_installer_urls_match_archived_build_downloads(constant, expected):
+    hook_path = Path(__file__).parents[2] / "packages" / "quicksand-qemu" / "hatch_build.py"
+    hook = runpy.run_path(str(hook_path))["RuntimeBuildHook"]
+
+    assert getattr(installer, constant) == expected
+    assert getattr(hook, f"_{constant}") == expected
 
 
 class TestInstallQemu:

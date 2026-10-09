@@ -3,6 +3,8 @@
 //! Minimal HTTP API running inside the guest VM to handle commands from the host.
 //! Reads configuration (token, port) from kernel command line.
 
+mod stdin_execution;
+
 use axum::{
     extract::State,
     http::{header, StatusCode},
@@ -16,19 +18,24 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
+    ffi::CString,
     fs,
     io::Write,
     net::SocketAddr,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    os::unix::process::CommandExt,
     process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::timeout;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+
+use stdin_execution::{ExecutionRequest, InputRequest, RequestError, StdinExecutions};
 
 // ============================================================================
 // Logging
@@ -68,6 +75,7 @@ struct AppState {
     /// True while an exclusive command (sync, fstrim, etc.) is running.
     /// Other execute requests are rejected with 503 while this is set.
     exclusive_busy: Arc<AtomicBool>,
+    stdin_executions: StdinExecutions,
 }
 
 // ============================================================================
@@ -82,6 +90,21 @@ struct AuthRequest {
 #[derive(Serialize)]
 struct AuthResponse {
     authenticated: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    capabilities: Vec<&'static str>,
+}
+
+impl AuthResponse {
+    fn new(authenticated: bool) -> Self {
+        Self {
+            authenticated,
+            capabilities: if authenticated {
+                vec!["stdin_streaming"]
+            } else {
+                Vec::new()
+            },
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -93,10 +116,46 @@ struct ExecuteRequest {
     /// When true, reject all other execute requests while this one is running.
     #[serde(default)]
     exclusive: bool,
+    shell: Option<String>,
+    stdin_id: Option<String>,
+    /// Optional OS user to run the command as. When set, the command is
+    /// executed with that user's uid/gid/groups and HOME, defaulting cwd to
+    /// the user's home directory.
+    #[serde(default)]
+    user: Option<String>,
+}
+
+impl ExecuteRequest {
+    fn into_stdin_execution(self) -> ExecutionRequest {
+        ExecutionRequest {
+            stdin_id: self.stdin_id.expect("stdin_id was checked"),
+            command: self.command,
+            shell: self.shell.unwrap_or_else(|| "/bin/sh".into()),
+            cwd: self.cwd,
+            user: self.user,
+            timeout: self.timeout,
+            exclusive: self.exclusive,
+        }
+    }
 }
 
 fn default_timeout() -> f64 {
     30.0
+}
+
+#[derive(Deserialize)]
+struct UserRequest {
+    name: String,
+    /// On delete, also remove the user's home directory.
+    #[serde(default)]
+    remove_home: bool,
+}
+
+#[derive(Serialize)]
+struct UserCreatedResponse {
+    uid: u32,
+    gid: u32,
+    home: String,
 }
 
 #[derive(Serialize)]
@@ -142,6 +201,233 @@ fn verify_token(headers: &axum::http::HeaderMap, expected: &str) -> Result<(), (
 }
 
 // ============================================================================
+// Multi-user support
+// ============================================================================
+//
+// Users are managed by editing the standard POSIX account files directly
+// (/etc/passwd, /etc/group, /etc/shadow). This keeps the behaviour identical
+// across every distro (Alpine, Ubuntu, ...) because those formats are
+// standardised and every minimal guest defaults to the `files` nsswitch
+// backend — no dependency on distro-specific `adduser`/`useradd` tools.
+
+/// uid/gid range for quicksand-managed users.
+const UID_MIN: u32 = 1000;
+const UID_MAX: u32 = 60000;
+
+/// Serializes account-file mutations so concurrent create/delete requests
+/// (the agent multiplexes requests) can't produce a torn /etc/passwd write.
+static USER_MGMT_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Clone)]
+struct PwEntry {
+    uid: u32,
+    gid: u32,
+    home: String,
+}
+
+/// Look up an existing user in /etc/passwd. Returns None if absent.
+fn lookup_user(name: &str) -> Option<PwEntry> {
+    let content = fs::read_to_string("/etc/passwd").ok()?;
+    for line in content.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() >= 7 && f[0] == name {
+            return Some(PwEntry {
+                uid: f[2].parse().ok()?,
+                gid: f[3].parse().ok()?,
+                home: f[5].to_string(),
+            });
+        }
+    }
+    None
+}
+
+/// Validate a username to prevent injection into the colon/newline-delimited
+/// account files. POSIX-portable subset: starts with [a-z_], then [a-z0-9_-].
+fn valid_username(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 32
+        && name.bytes().enumerate().all(|(i, b)| match b {
+            b'a'..=b'z' | b'_' => true,
+            b'0'..=b'9' | b'-' if i > 0 => true,
+            _ => false,
+        })
+}
+
+/// Highest id in [UID_MIN, UID_MAX) across passwd+group, plus one.
+fn next_free_id() -> u32 {
+    let mut max = UID_MIN - 1;
+    for (path, field) in [("/etc/passwd", 2usize), ("/etc/group", 2usize)] {
+        if let Ok(content) = fs::read_to_string(path) {
+            for line in content.lines() {
+                let f: Vec<&str> = line.split(':').collect();
+                if f.len() > field {
+                    if let Ok(id) = f[field].parse::<u32>() {
+                        if (UID_MIN..UID_MAX).contains(&id) && id > max {
+                            max = id;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    max + 1
+}
+
+fn append_line(path: &str, line: &str) -> std::io::Result<()> {
+    let mut f = fs::OpenOptions::new().append(true).create(true).open(path)?;
+    f.write_all(line.as_bytes())?;
+    f.write_all(b"\n")
+}
+
+fn remove_lines_for_user(path: &str, name: &str) -> std::io::Result<()> {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return Ok(()), // file may not exist (e.g. shadow); nothing to do
+    };
+    let prefix = format!("{}:", name);
+    let mut out: String = content
+        .lines()
+        .filter(|l| !l.starts_with(&prefix))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    fs::write(path, out)
+}
+
+/// SIGKILL every process owned by `uid` (each /proc/<pid> dir is owned by the
+/// process's real uid).
+fn kill_user_processes(uid: u32) {
+    if let Ok(entries) = fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let fname = entry.file_name();
+            let pid = match fname.to_string_lossy().parse::<i32>() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if let Ok(meta) = fs::metadata(format!("/proc/{}", pid)) {
+                if meta.uid() == uid {
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Create a new user account (distro-agnostic, native file manipulation).
+fn create_user(name: &str) -> Result<PwEntry, String> {
+    let _guard = USER_MGMT_LOCK.lock().unwrap();
+
+    if !valid_username(name) {
+        return Err(format!("Invalid username: {}", name));
+    }
+    if lookup_user(name).is_some() {
+        return Err(format!("User already exists: {}", name));
+    }
+
+    let id = next_free_id();
+    if id >= UID_MAX {
+        return Err("No free uid available".to_string());
+    }
+    let home = format!("/home/{}", name);
+
+    // group: name:x:gid:
+    append_line("/etc/group", &format!("{}:x:{}:", name, id))
+        .map_err(|e| format!("write /etc/group: {}", e))?;
+    // passwd: name:x:uid:gid:gecos:home:shell  (gecos empty; /bin/sh is universal)
+    append_line(
+        "/etc/passwd",
+        &format!("{}:x:{}:{}::{}:/bin/sh", name, id, id, home),
+    )
+    .map_err(|e| format!("write /etc/passwd: {}", e))?;
+    // shadow: locked password (`!`); we never password-auth, only setuid.
+    let _ = append_line("/etc/shadow", &format!("{}:!::0:99999:7:::", name));
+
+    fs::create_dir_all(&home).map_err(|e| format!("create {}: {}", home, e))?;
+    let c_home = CString::new(home.as_str()).map_err(|e| e.to_string())?;
+    unsafe {
+        if libc::chown(c_home.as_ptr(), id as _, id as _) != 0 {
+            return Err(format!("chown {}: {}", home, std::io::Error::last_os_error()));
+        }
+    }
+    fs::set_permissions(&home, fs::Permissions::from_mode(0o700))
+        .map_err(|e| format!("chmod {}: {}", home, e))?;
+
+    Ok(PwEntry { uid: id, gid: id, home })
+}
+
+/// Delete a user: kill its processes, strip account-file entries, optionally
+/// remove its home directory.
+fn delete_user(name: &str, remove_home: bool) -> Result<(), String> {
+    let _guard = USER_MGMT_LOCK.lock().unwrap();
+
+    if !valid_username(name) {
+        return Err(format!("Invalid username: {}", name));
+    }
+    let pw = lookup_user(name).ok_or_else(|| format!("No such user: {}", name))?;
+
+    kill_user_processes(pw.uid);
+
+    remove_lines_for_user("/etc/passwd", name).map_err(|e| format!("edit /etc/passwd: {}", e))?;
+    remove_lines_for_user("/etc/group", name).map_err(|e| format!("edit /etc/group: {}", e))?;
+    let _ = remove_lines_for_user("/etc/shadow", name);
+
+    if remove_home {
+        let _ = fs::remove_dir_all(&pw.home);
+    }
+    Ok(())
+}
+
+/// Resolve an optional username into a `PwEntry`, returning an error string if
+/// the user is requested but doesn't exist.
+fn resolve_user(user: &Option<String>) -> Result<Option<(String, PwEntry)>, String> {
+    match user {
+        None => Ok(None),
+        Some(u) => match lookup_user(u) {
+            Some(pw) => Ok(Some((u.clone(), pw))),
+            None => Err(format!("No such user: {}", u)),
+        },
+    }
+}
+
+/// Configure std commands and tokio commands (via `as_std_mut`) identically:
+/// explicit cwd overrides the user's home, and the child joins supplementary
+/// groups before dropping gid and uid. The privilege drop happens only in
+/// pre_exec, while the forked child is still root.
+fn configure_user(cmd: &mut Command, cwd: Option<&str>, user_pw: Option<&(String, PwEntry)>) {
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    } else if let Some((_, pw)) = user_pw {
+        cmd.current_dir(&pw.home);
+    }
+    if let Some((name, pw)) = user_pw {
+        let uid = pw.uid;
+        let gid = pw.gid;
+        let name_c = CString::new(name.as_str()).expect("validated username");
+        cmd.env("HOME", &pw.home).env("USER", name).env("LOGNAME", name);
+        unsafe {
+            cmd.pre_exec(move || {
+                // `as _` adapts to the target's libc types (e.g. initgroups'
+                // basegroup is gid_t on Linux but c_int on macOS).
+                if libc::initgroups(name_c.as_ptr(), gid as _) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::setgid(gid as _) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::setuid(uid as _) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+}
+
+// ============================================================================
 // Handlers
 // ============================================================================
 
@@ -150,9 +436,9 @@ async fn authenticate(
     Json(req): Json<AuthRequest>,
 ) -> impl IntoResponse {
     if req.token == *state.token {
-        (StatusCode::OK, Json(AuthResponse { authenticated: true }))
+        (StatusCode::OK, Json(AuthResponse::new(true)))
     } else {
-        (StatusCode::UNAUTHORIZED, Json(AuthResponse { authenticated: false }))
+        (StatusCode::UNAUTHORIZED, Json(AuthResponse::new(false)))
     }
 }
 
@@ -164,6 +450,13 @@ async fn execute(
     if let Err(e) = verify_token(&headers, &state.token) {
         return e.into_response();
     }
+
+    // Resolve the target user (if any) before touching the exclusive lock so a
+    // bad username can't leave the lock claimed.
+    let user_pw = match resolve_user(&req.user) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    };
 
     // Reject if an exclusive command is already running.
     if state.exclusive_busy.load(Ordering::SeqCst) {
@@ -201,9 +494,7 @@ async fn execute(
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        if let Some(cwd) = &req.cwd {
-            cmd.current_dir(cwd);
-        }
+        configure_user(&mut cmd, req.cwd.as_deref(), user_pw.as_ref());
 
         cmd.output()
     })
@@ -243,6 +534,28 @@ async fn execute_stream(
     if let Err(e) = verify_token(&headers, &state.token) {
         return e.into_response();
     }
+
+    if req.stdin_id.is_some() {
+        let output = match state.stdin_executions.start(
+            req.into_stdin_execution(),
+            Arc::clone(&state.exclusive_busy),
+        ) {
+            Ok(output) => output,
+            Err(error) => return stdin_request_error(error),
+        };
+        let stream = ReceiverStream::new(output).map(|event| {
+            Ok::<_, Infallible>(
+                Event::default().data(serde_json::to_string(&event).expect("serializable output")),
+            )
+        });
+        return Sse::new(stream).into_response();
+    }
+
+    // Resolve the target user (if any) before touching the exclusive lock.
+    let user_pw = match resolve_user(&req.user) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    };
 
     // Reject if an exclusive command is already running.
     if state.exclusive_busy.load(Ordering::SeqCst) {
@@ -284,9 +597,7 @@ async fn execute_stream(
             cmd.stdout(Stdio::piped());
             cmd.stderr(Stdio::piped());
 
-            if let Some(cwd) = &req.cwd {
-                cmd.current_dir(cwd);
-            }
+            configure_user(cmd.as_std_mut(), req.cwd.as_deref(), user_pw.as_ref());
 
             let mut child = match cmd.spawn() {
                 Ok(c) => c,
@@ -361,6 +672,56 @@ async fn execute_stream(
     Sse::new(stream).into_response()
 }
 
+fn stdin_request_error(error: RequestError) -> axum::response::Response {
+    let status = match &error {
+        RequestError::Invalid(_) => StatusCode::BAD_REQUEST,
+        RequestError::Conflict(_) => StatusCode::CONFLICT,
+        RequestError::ExclusiveBusy => StatusCode::SERVICE_UNAVAILABLE,
+        RequestError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (
+        status,
+        Json(ErrorResponse {
+            detail: error.to_string(),
+        }),
+    )
+        .into_response()
+}
+
+async fn stdin(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(value): Json<serde_json::Value>,
+) -> axum::response::Response {
+    if let Err(error) = verify_token(&headers, &state.token) {
+        return error.into_response();
+    }
+    let ack = match InputRequest::parse(value).and_then(|input| state.stdin_executions.submit(input)) {
+        Ok(ack) => ack,
+        Err(error) => return stdin_request_error(error),
+    };
+    match ack.wait().await {
+        Ok(closed) => Json(serde_json::json!({"closed": closed})).into_response(),
+        Err(error) => stdin_request_error(error),
+    }
+}
+
+async fn cancel(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(value): Json<serde_json::Value>,
+) -> axum::response::Response {
+    if let Err(error) = verify_token(&headers, &state.token) {
+        return error.into_response();
+    }
+    let stdin_id = match stdin_execution::parse_cancel(value) {
+        Ok(stdin_id) => stdin_id,
+        Err(error) => return stdin_request_error(error),
+    };
+    let cancelled = state.stdin_executions.cancel(&stdin_id).await;
+    Json(serde_json::json!({"cancelled": cancelled})).into_response()
+}
+
 async fn ping(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -379,6 +740,42 @@ async fn ping(
         .into_response()
 }
 
+async fn create_user_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<UserRequest>,
+) -> impl IntoResponse {
+    if let Err(e) = verify_token(&headers, &state.token) {
+        return e.into_response();
+    }
+    match create_user(&req.name) {
+        Ok(pw) => (
+            StatusCode::OK,
+            Json(UserCreatedResponse {
+                uid: pw.uid,
+                gid: pw.gid,
+                home: pw.home,
+            }),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    }
+}
+
+async fn delete_user_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<UserRequest>,
+) -> impl IntoResponse {
+    if let Err(e) = verify_token(&headers, &state.token) {
+        return e.into_response();
+    }
+    match delete_user(&req.name, req.remove_home) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"removed": true}))).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(ErrorResponse { detail: e })).into_response(),
+    }
+}
+
 // ============================================================================
 // Shared command execution (used by both HTTP and virtio-serial transports)
 // ============================================================================
@@ -389,7 +786,12 @@ struct ExecResult {
     exit_code: i32,
 }
 
-async fn run_command(command: &str, timeout_secs: f64, cwd: Option<&str>) -> ExecResult {
+async fn run_command(
+    command: &str,
+    timeout_secs: f64,
+    cwd: Option<&str>,
+    user_pw: Option<&(String, PwEntry)>,
+) -> ExecResult {
     let timeout_duration = Duration::from_secs_f64(timeout_secs);
 
     let result = timeout(timeout_duration, async {
@@ -397,9 +799,7 @@ async fn run_command(command: &str, timeout_secs: f64, cwd: Option<&str>) -> Exe
         cmd.arg("-c").arg(command);
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
-        if let Some(dir) = cwd {
-            cmd.current_dir(dir);
-        }
+        configure_user(&mut cmd, cwd, user_pw);
         cmd.output()
     })
     .await;
@@ -570,15 +970,31 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
 
     log(&format!("Virtio-serial channel open: {}", VIRTIO_SERIAL_PATH));
 
+    serve_virtio_serial(chan, token, exclusive_busy, StdinExecutions::default()).await;
+}
+
+async fn serve_virtio_serial(
+    chan: Arc<SerialChannel>,
+    token: String,
+    exclusive_busy: Arc<AtomicBool>,
+    stdin_executions: StdinExecutions,
+) {
     // Dedicated writer task: request handlers (including spawned command tasks)
-    // send frames through this channel; the writer drains it and serialises the
-    // frames onto the wire in arrival order, so responses for different request
-    // ids never interleave. The reader loop below shares the same fd via
+    // send frames through output channels. One writer serialises whole frames,
+    // preserving each stream's order without interleaving bytes from different
+    // request ids. The reader loop below shares the same fd via
     // `AsyncFd`, which tracks read/write readiness independently.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
+    // Keep legacy output unchanged, but backpressure the new stdin executions.
+    let (stream_tx, mut stream_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(64);
     let writer_chan = Arc::clone(&chan);
     let writer_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
+        loop {
+            let msg = tokio::select! {
+                Some(msg) = rx.recv() => msg,
+                Some(msg) = stream_rx.recv() => msg,
+                else => break,
+            };
             if let Err(e) = write_frame_serial(&writer_chan, &msg).await {
                 log(&format!("Write error: {}", e));
                 break;
@@ -589,10 +1005,16 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
     let mut authenticated = false;
 
     loop {
-        let frame = match read_frame_serial(&chan).await {
-            Ok(f) => f,
-            Err(e) => {
-                log(&format!("Virtio-serial read error: {}", e));
+        let frame = tokio::select! {
+            frame = read_frame_serial(&chan) => match frame {
+                Ok(frame) => frame,
+                Err(error) => {
+                    log(&format!("Virtio-serial read error: {error}"));
+                    break;
+                }
+            },
+            _ = tx.closed() => {
+                log("Virtio-serial writer disconnected");
                 break;
             }
         };
@@ -605,7 +1027,7 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
             "authenticate" => {
                 let req_token = params.get("token").and_then(|v| v.as_str()).unwrap_or("");
                 authenticated = req_token == token;
-                send_frame(&tx, serde_json::json!({"id": id, "result": {"authenticated": authenticated}}));
+                send_frame(&tx, serde_json::json!({"id": id, "result": AuthResponse::new(authenticated)}));
             }
             "ping" if authenticated => {
                 send_frame(&tx, serde_json::json!({"id": id, "result": {"pong": true, "pid": std::process::id()}}));
@@ -614,7 +1036,16 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let timeout_secs = params.get("timeout").and_then(|v| v.as_f64()).unwrap_or(30.0);
                 let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let user = params.get("user").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let is_exclusive = params.get("exclusive").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let user_pw = match resolve_user(&user) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        send_frame(&tx, serde_json::json!({"id": id, "result": {"stdout": "", "stderr": e, "exit_code": -1}}));
+                        continue;
+                    }
+                };
 
                 if exclusive_busy.load(Ordering::SeqCst) {
                     send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}}));
@@ -632,7 +1063,8 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 let tx = tx.clone();
                 let exclusive_busy = Arc::clone(&exclusive_busy);
                 tokio::spawn(async move {
-                    let result = run_command(&command, timeout_secs, cwd.as_deref()).await;
+                    let result =
+                        run_command(&command, timeout_secs, cwd.as_deref(), user_pw.as_ref()).await;
 
                     if is_exclusive {
                         exclusive_busy.store(false, Ordering::SeqCst);
@@ -649,10 +1081,51 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                 });
             }
             "execute_stream" if authenticated => {
+                if params.get("stdin_id").is_some_and(|value| !value.is_null()) {
+                    let result = serde_json::from_value::<ExecuteRequest>(params)
+                        .map_err(|error| RequestError::Invalid(format!("Invalid stdin execution request: {error}")))
+                        .and_then(|request| {
+                            stdin_executions.start(
+                                request.into_stdin_execution(),
+                                Arc::clone(&exclusive_busy),
+                            )
+                        });
+                    match result {
+                        Ok(mut output) => {
+                            let tx = stream_tx.clone();
+                            tokio::spawn(async move {
+                                while let Some(event) = output.recv().await {
+                                    let mut frame = serde_json::to_value(event).expect("serializable output");
+                                    frame["id"] = serde_json::json!(id);
+                                    if tx.send(frame).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            });
+                        }
+                        Err(error) => {
+                            send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}}));
+                            send_frame(&tx, serde_json::json!({"id": id, "stream": "exit", "exit_code": -1}));
+                        }
+                    }
+                    continue;
+                }
+
                 let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let timeout_secs = params.get("timeout").and_then(|v| v.as_f64()).unwrap_or(30.0);
                 let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let user = params.get("user").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let is_exclusive = params.get("exclusive").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                // Resolve the target user before claiming the exclusive lock.
+                let user_pw = match resolve_user(&user) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        send_frame(&tx, serde_json::json!({"id": id, "stream": "stderr", "data": format!("{}\n", e)}));
+                        send_frame(&tx, serde_json::json!({"id": id, "stream": "exit", "exit_code": -1}));
+                        continue;
+                    }
+                };
 
                 if exclusive_busy.load(Ordering::SeqCst) {
                     send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Exclusive command in progress"}}));
@@ -677,9 +1150,7 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                         cmd.arg("-c").arg(&command);
                         cmd.stdout(Stdio::piped());
                         cmd.stderr(Stdio::piped());
-                        if let Some(dir) = &cwd {
-                            cmd.current_dir(dir);
-                        }
+                        configure_user(cmd.as_std_mut(), cwd.as_deref(), user_pw.as_ref());
 
                         let mut child = match cmd.spawn() {
                             Ok(c) => c,
@@ -738,6 +1209,50 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
                     }
                 });
             }
+            "stdin" if authenticated => {
+                match InputRequest::parse(params).and_then(|input| stdin_executions.submit(input)) {
+                    Ok(ack) => {
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            match ack.wait().await {
+                                Ok(closed) => send_frame(&tx, serde_json::json!({"id": id, "result": {"closed": closed}})),
+                                Err(error) => send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}})),
+                            }
+                        });
+                    }
+                    Err(error) => send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}})),
+                }
+            }
+            "cancel" if authenticated => {
+                match stdin_execution::parse_cancel(params) {
+                    Ok(stdin_id) => {
+                        let executions = stdin_executions.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let cancelled = executions.cancel(&stdin_id).await;
+                            send_frame(&tx, serde_json::json!({"id": id, "result": {"cancelled": cancelled}}));
+                        });
+                    }
+                    Err(error) => send_frame(&tx, serde_json::json!({"id": id, "error": {"message": error.to_string()}})),
+                }
+            }
+            "create_user" if authenticated => {
+                let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let resp = match create_user(name) {
+                    Ok(pw) => serde_json::json!({"id": id, "result": {"uid": pw.uid, "gid": pw.gid, "home": pw.home}}),
+                    Err(e) => serde_json::json!({"id": id, "error": {"message": e}}),
+                };
+                send_frame(&tx, resp);
+            }
+            "delete_user" if authenticated => {
+                let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let remove_home = params.get("remove_home").and_then(|v| v.as_bool()).unwrap_or(false);
+                let resp = match delete_user(name, remove_home) {
+                    Ok(()) => serde_json::json!({"id": id, "result": {"removed": true}}),
+                    Err(e) => serde_json::json!({"id": id, "error": {"message": e}}),
+                };
+                send_frame(&tx, resp);
+            }
             _ if !authenticated => {
                 send_frame(&tx, serde_json::json!({"id": id, "error": {"message": "Not authenticated"}}));
             }
@@ -747,15 +1262,33 @@ async fn handle_virtio_serial(token: String, exclusive_busy: Arc<AtomicBool>) {
         }
     }
 
-    // Read loop ended (peer closed or read error). Drop the last sender so the
-    // writer task's channel closes and it exits, then join it.
-    drop(tx);
-    let _ = writer_task.await;
+    stdin_executions.cancel_all().await;
+    // A disconnected peer may leave the device writer blocked on writability.
+    // Do not wait for legacy command senders to close before ending transport I/O.
+    writer_task.abort();
+    if let Err(error) = writer_task.await {
+        if !error.is_cancelled() {
+            log(&format!("Virtio-serial writer task failed: {error}"));
+        }
+    }
 }
 
 // ============================================================================
 // Main
 // ============================================================================
+
+fn http_router(state: AppState) -> Router {
+    Router::new()
+        .route("/authenticate", post(authenticate))
+        .route("/execute", post(execute))
+        .route("/execute_stream", post(execute_stream))
+        .route("/stdin", post(stdin))
+        .route("/cancel", post(cancel))
+        .route("/create_user", post(create_user_handler))
+        .route("/delete_user", post(delete_user_handler))
+        .route("/ping", get(ping))
+        .with_state(state)
+}
 
 #[tokio::main]
 async fn main() {
@@ -802,14 +1335,10 @@ async fn main() {
     let state = AppState {
         token: Arc::new(token),
         exclusive_busy,
+        stdin_executions: StdinExecutions::default(),
     };
 
-    let app = Router::new()
-        .route("/authenticate", post(authenticate))
-        .route("/execute", post(execute))
-        .route("/execute_stream", post(execute_stream))
-        .route("/ping", get(ping))
-        .with_state(state);
+    let app = http_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log(&format!("Listening on {}", addr));
@@ -817,3 +1346,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
+
+#[cfg(test)]
+mod transport_tests;

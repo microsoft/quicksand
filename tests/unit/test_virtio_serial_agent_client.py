@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import socket
@@ -11,6 +12,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from unittest.mock import patch
 
+import pytest
 from quicksand_core._types import QuicksandGuestAgentMethod
 from quicksand_core.host.virtio_serial_agent_client import VirtioSerialAgentClient
 
@@ -101,8 +103,9 @@ class FakeAgent:
     returned frames back to the same connection.
     """
 
-    def __init__(self, handler: Handler):
+    def __init__(self, handler: Handler, *, capabilities: list[str] | None = None):
         self._handler = handler
+        self._capabilities = capabilities
         self._client_sock: socket.socket | None = None
         self._srv_writer: asyncio.StreamWriter | None = None
         self._serve_task: asyncio.Task | None = None
@@ -150,7 +153,10 @@ class FakeAgent:
                 msg = await _read_frame(reader)
                 self.received_requests.append(msg)
                 if msg.get("method") == "authenticate":
-                    writer.write(_encode_frame({"result": {"authenticated": True}}))
+                    result: dict = {"authenticated": True}
+                    if self._capabilities is not None:
+                        result["capabilities"] = self._capabilities
+                    writer.write(_encode_frame({"result": result}))
                     await writer.drain()
                     continue
                 self._handler_tasks.append(asyncio.create_task(self._handle(msg, writer)))
@@ -350,3 +356,181 @@ async def test_stream_request_accumulates_multi_frame_output() -> None:
         ("out", "world\n"),
         ("err", "warn\n"),
     ]
+
+
+async def test_legacy_agent_rejects_stdin_without_consuming_it():
+    produced = []
+
+    async def source():
+        produced.append(True)
+        yield b"unused"
+
+    async def handler(msg):
+        raise AssertionError(f"Unexpected execution: {msg}")
+
+    async with FakeAgent(handler) as agent:
+        client = await _connected_client(agent)
+        try:
+            assert not client.supports_stdin
+            result = await client.send_stream_request({"command": "cat"}, timeout=2, stdin=source())
+        finally:
+            await client.close()
+    assert "does not support streaming stdin" in result["error"]["message"]
+    assert not produced
+    assert [r["method"] for r in agent.received_requests] == ["authenticate"]
+
+
+async def test_stdin_and_output_progress_in_both_directions():
+    prompt = asyncio.Event()
+    echoed = asyncio.Event()
+    output = []
+    received = bytearray()
+    execution_id = None
+
+    async def source():
+        await prompt.wait()
+        yield b"first\n"
+        await echoed.wait()
+        yield b"\x00\xfflast"
+
+    async def handler(msg):
+        nonlocal execution_id
+        request_id = msg["id"]
+        if msg["method"] == "execute_stream":
+            execution_id = request_id
+            return [
+                {"id": request_id, "stream": "ready"},
+                {"id": request_id, "stream": "stdout", "data": "prompt>"},
+            ]
+        assert msg["method"] == "stdin"
+        if msg["params"].get("eof"):
+            return [
+                {"id": request_id, "result": {"closed": True}},
+                {"id": execution_id, "stream": "exit", "exit_code": 0},
+            ]
+        received.extend(base64.b64decode(msg["params"]["data"], validate=True))
+        return [
+            {"id": request_id, "result": {"closed": False}},
+            {"id": execution_id, "stream": "stdout", "data": "accepted"},
+        ]
+
+    def on_stdout(chunk):
+        output.append(chunk)
+        if "prompt>" in "".join(output):
+            prompt.set()
+        if "accepted" in "".join(output):
+            echoed.set()
+
+    async with FakeAgent(handler, capabilities=["stdin_streaming"]) as agent:
+        client = await _connected_client(agent)
+        try:
+            assert client.supports_stdin
+            result = await client.send_stream_request(
+                {"command": "cat"}, timeout=2, stdin=source(), on_stdout=on_stdout
+            )
+        finally:
+            await client.close()
+    assert result["result"]["stdout"] == "prompt>acceptedaccepted"
+    assert received == b"first\n\x00\xfflast"
+    assert not client.supports_stdin
+
+
+async def test_concurrent_stdin_streams_do_not_mix_input():
+    executions = {}
+
+    async def handler(msg):
+        request_id = msg["id"]
+        stdin_id = msg["params"]["stdin_id"]
+        if msg["method"] == "execute_stream":
+            executions[stdin_id] = (request_id, bytearray())
+            return [{"id": request_id, "stream": "ready"}]
+        execution_id, data = executions[stdin_id]
+        if msg["params"].get("eof"):
+            return [
+                {"id": request_id, "result": {"closed": True}},
+                {"id": execution_id, "stream": "stdout", "data": data.decode()},
+                {"id": execution_id, "stream": "exit", "exit_code": 0},
+            ]
+        data.extend(base64.b64decode(msg["params"]["data"]))
+        return [{"id": request_id, "result": {"closed": False}}]
+
+    async with FakeAgent(handler, capabilities=["stdin_streaming"]) as agent:
+        client = await _connected_client(agent)
+        try:
+            results = await asyncio.gather(
+                client.send_stream_request({"command": "cat"}, timeout=2, stdin=b"one"),
+                client.send_stream_request({"command": "cat"}, timeout=2, stdin=b"two"),
+            )
+            assert not client._pending
+            assert not client._pending_streams
+        finally:
+            await client.close()
+    assert [result["result"]["stdout"] for result in results] == ["one", "two"]
+    assert len(executions) == 2
+
+
+async def test_cancel_during_stdin_ack_cleans_up_pending_requests():
+    writing = asyncio.Event()
+    cancelled = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def source():
+        try:
+            yield b"first"
+        finally:
+            closed.set()
+
+    async def handler(msg):
+        request_id = msg["id"]
+        if msg["method"] == "execute_stream":
+            return [{"id": request_id, "stream": "ready"}]
+        if msg["method"] == "stdin":
+            writing.set()
+            await asyncio.Event().wait()
+        if msg["method"] == "cancel":
+            cancelled.set()
+            return [{"id": request_id, "result": {"cancelled": True}}]
+        return [_ok(request_id, "still connected")]
+
+    async with FakeAgent(handler, capabilities=["stdin_streaming"]) as agent:
+        client = await _connected_client(agent)
+        try:
+            task = asyncio.create_task(
+                client.send_stream_request({"command": "cat"}, timeout=5, stdin=source())
+            )
+            await asyncio.wait_for(writing.wait(), timeout=2)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert cancelled.is_set()
+            assert closed.is_set()
+            assert not client._pending
+            assert not client._pending_streams
+            result = await client.send_request(QuicksandGuestAgentMethod.PING, {}, timeout=2)
+            assert result["result"]["stdout"] == "still connected"
+        finally:
+            await client.close()
+
+
+async def test_cancel_before_write_cancels_registered_future():
+    async def handler(msg):
+        return [_ok(msg["id"])]
+
+    async with FakeAgent(handler) as agent:
+        client = await _connected_client(agent)
+        assert client._writer_lock is not None
+        await client._writer_lock.acquire()
+        try:
+            task = asyncio.create_task(
+                client.send_request(QuicksandGuestAgentMethod.PING, {}, timeout=2)
+            )
+            await asyncio.sleep(0)
+            future = next(iter(client._pending.values()))
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert future.cancelled()
+            assert not client._pending
+        finally:
+            client._writer_lock.release()
+            await client.close()
