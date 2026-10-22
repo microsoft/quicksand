@@ -5,26 +5,26 @@ description = "A VM harness for AI agents that works on macOS, Linux, and Window
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["quicksand-core>=0.14.0,<0.15.0", "packaging>=23"]
+dependencies = ["quicksand-core>=0.14.1,<0.15.0", "packaging>=23"]
 
 [project.optional-dependencies]
 qemu = ["quicksand-qemu>=0.4.3"]
-ubuntu = ["quicksand-ubuntu>=0.7.2"]
-alpine = ["quicksand-alpine>=0.7.2"]
-alpine-desktop = ["quicksand-alpine-desktop>=0.7.5"]
-ubuntu-desktop = ["quicksand-ubuntu-desktop>=0.7.5"]
-agent = ["quicksand-agent>=0.3.7"]
-cua = ["quicksand-cua>=0.2.7"]
-dev = ["quicksand-image-tools>=0.3.2", "quicksand-overlay-scaffold>=0.1.4", "quicksand-base-scaffold>=0.1.3"]
+ubuntu = ["quicksand-ubuntu>=0.10.2"]
+alpine = ["quicksand-alpine>=0.10.2"]
+alpine-desktop = ["quicksand-alpine-desktop>=0.9.12"]
+ubuntu-desktop = ["quicksand-ubuntu-desktop>=0.9.12"]
+agent = ["quicksand-agent>=0.4.12"]
+cua = ["quicksand-cua>=0.3.14"]
+dev = ["quicksand-image-tools>=0.6.2", "quicksand-overlay-scaffold>=0.3.13", "quicksand-base-scaffold>=0.3.13"]
 all = [
     "quicksand-qemu>=0.4.3",
-    "quicksand-ubuntu>=0.7.2",
-    "quicksand-alpine>=0.7.2",
-    "quicksand-alpine-desktop>=0.7.5",
-    "quicksand-ubuntu-desktop>=0.7.5",
-    "quicksand-image-tools>=0.3.2",
-    "quicksand-agent>=0.3.7",
-    "quicksand-cua>=0.2.7",
+    "quicksand-ubuntu>=0.10.2",
+    "quicksand-alpine>=0.10.2",
+    "quicksand-alpine-desktop>=0.9.12",
+    "quicksand-ubuntu-desktop>=0.9.12",
+    "quicksand-image-tools>=0.6.2",
+    "quicksand-agent>=0.4.12",
+    "quicksand-cua>=0.3.14",
 ]
 
 [project.scripts]

@@ -20,13 +20,17 @@ members = [
     "quicksand-ubuntu",
     "quicksand-ubuntu-desktop",
 ]
-constraints = [{ name = "setuptools", specifier = ">=78.1.1" }]
+constraints = [
+    { name = "certifi", specifier = ">=2026.10.19" },
+    { name = "setuptools", specifier = ">=78.1.1" },
+]
 overrides = [{ name = "httpx", specifier = ">=0.27,<1" }]
 
 [manifest.dependency-groups]
 dev = [
     { name = "dnslib", specifier = ">=0.9.24" },
     { name = "hatchling" },
+    { name = "pip", specifier = ">=26.2.2" },
     { name = "poethepoet" },
     { name = "pre-commit", specifier = ">=4.6.0" },
     { name = "pytest" },
@@ -117,11 +121,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2026.4.22"
+version = "2026.10.19"
 source = { registry = "https://packagefeedproxy.microsoft.io/pypi/simple/" }
-sdist = { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/certifi/2026.4.22/certifi-2026.4.22.tar.gz", hash = "sha256:8d455352a37b71bf76a79caa83a3d6c25afee4a385d632127b6afb3963f1c580", size = 137077, upload-time = "2026-08-04T05:16:45Z" }
+sdist = { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/certifi/2026.10.19/certifi-2026.10.19.tar.gz", hash = "sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae", size = 137598, upload-time = "2026-10-21T00:00:12Z" }
 wheels = [
-    { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/certifi/2026.4.22/certifi-2026.4.22-py3-none-any.whl", hash = "sha256:3cb2210c8f88ba2318d29b0388d1023c8492ff72ecdde4ebdaddbb13a31b1c4a", size = 135707, upload-time = "2026-07-24T15:58:06Z" },
+    { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/certifi/2026.10.19/certifi-2026.10.19-py3-none-any.whl", hash = "sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b", size = 136464, upload-time = "2026-10-20T23:16:46Z" },
 ]
 
 [[package]]
@@ -561,6 +565,15 @@ source = { registry = "https://packagefeedproxy.microsoft.io/pypi/simple/" }
 sdist = { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/pathspec/1.1.1/pathspec-1.1.1.tar.gz", hash = "sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a", size = 135180, upload-time = "2026-07-30T09:56:00Z" }
 wheels = [
     { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/pathspec/1.1.1/pathspec-1.1.1-py3-none-any.whl", hash = "sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189", size = 57328, upload-time = "2026-07-23T18:47:22Z" },
+]
+
+[[package]]
+name = "pip"
+version = "26.2.2"
+source = { registry = "https://packagefeedproxy.microsoft.io/pypi/simple/" }
+sdist = { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/pip/26.2.2/pip-26.2.2.tar.gz", hash = "sha256:3a8e5c800492787f33a4114ef54444546c340df428974ebba17e0fd47e11af2f", size = 1863336, upload-time = "2026-10-21T00:29:24Z" }
+wheels = [
+    { url = "https://ms-feed-25.pkgs.visualstudio.com/6f084628-a36d-42cb-934d-057357e379dc/_packaging/49d7402f-07bb-4b18-a9ce-086e6e98a554/pypi/download/pip/26.2.2/pip-26.2.2-py3-none-any.whl", hash = "sha256:fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70", size = 1819850, upload-time = "2026-10-20T22:42:39Z" },
 ]
 
 [[package]]
@@ -1082,6 +1095,7 @@ name = "quicksand-core"
 version = "0.14.1.dev0"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
+    { name = "certifi" },
     { name = "dnslib", marker = "sys_platform == 'darwin'" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -1090,6 +1104,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2026.10.19" },
     { name = "dnslib", marker = "sys_platform == 'darwin'", specifier = ">=0.9.24" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -1118,6 +1133,7 @@ source = { editable = "packages/dev/quicksand-gh-runners" }
 dependencies = [
     { name = "azure-identity" },
     { name = "azure-mgmt-compute" },
+    { name = "certifi" },
     { name = "requests" },
 ]
 
@@ -1125,6 +1141,7 @@ dependencies = [
 requires-dist = [
     { name = "azure-identity" },
     { name = "azure-mgmt-compute" },
+    { name = "certifi", specifier = ">=2026.10.19" },
     { name = "requests" },
 ]
 

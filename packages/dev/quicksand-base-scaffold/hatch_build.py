@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -48,8 +49,8 @@ class BaseImageBuildHook(BuildHookInterface):
         image_path = images_dir / f"quicksand-base-scaffold-{distro_version}-{arch}.qcow2"
         dockerfile_path = pkg_dir / "docker" / "Dockerfile"
 
-        if not image_path.exists():
-            self.app.display_info(f"Image not found: {image_path.name}, building...")
+        if os.environ.get("QUICKSAND_REBUILD_IMAGES", "").strip() == "1" or not image_path.exists():
+            self.app.display_info(f"Building image: {image_path.name}")
             self._build_image(dockerfile_path, image_path)
 
         self.app.display_info(f"Including image: {image_path}")

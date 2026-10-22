@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -75,6 +76,8 @@ def build_image(
         output_path: Where to save the resulting qcow2 image.
                     If None, saves to cache directory with a hash-based name.
         cache_dir: Directory for cached images. Defaults to ~/.cache/quicksand/images/
+        force: Rebuild the image, pull parent images, and bypass Docker's layer cache.
+               Also enabled by QUICKSAND_REBUILD_IMAGES=1.
 
     Returns:
         Path to the built qcow2 image.
@@ -83,6 +86,7 @@ def build_image(
         RuntimeError: If Docker is not available or build fails.
     """
     log = log or logger
+    force = force or os.environ.get("QUICKSAND_REBUILD_IMAGES", "").strip() == "1"
 
     if not shutil.which("docker"):
         raise RuntimeError(
@@ -155,7 +159,7 @@ def build_image(
 
             # Build Docker image
             tag = f"quicksand-build:{content_hash}"
-            _run_docker_build(dockerfile_path, context_dir, tag, log=log)
+            _run_docker_build(dockerfile_path, context_dir, tag, log=log, force=force)
 
             try:
                 log.info("[2/5] Exporting filesystem...")
@@ -187,17 +191,14 @@ def _run_docker_build(
     context: Path,
     tag: str,
     log: logging.Logger = logger,
+    *,
+    force: bool = False,
 ) -> None:
     """Build a Docker image, streaming output to the caller's logger."""
-    cmd = [
-        "docker",
-        "build",
-        "-f",
-        str(dockerfile),
-        "-t",
-        tag,
-        str(context),
-    ]
+    cmd = ["docker", "build"]
+    if force:
+        cmd.extend(["--pull", "--no-cache"])
+    cmd.extend(["-f", str(dockerfile), "-t", tag, str(context)])
 
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     assert process.stdout is not None

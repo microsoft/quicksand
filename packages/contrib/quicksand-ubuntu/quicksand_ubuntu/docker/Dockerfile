@@ -8,6 +8,10 @@
 # =============================================================================
 FROM rust:bookworm AS agent-builder
 
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build
 COPY agent/Cargo.toml agent/Cargo.lock* ./
 COPY agent/src ./src
@@ -42,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iproute2 iputils-ping \
         sudo curl ca-certificates \
         cifs-utils cloud-guest-utils e2fsprogs \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816ubuntu0.24.04.1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/* /var/tmp/*
 

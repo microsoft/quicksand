@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import runpy
+import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from quicksand_image_tools.build import (
@@ -173,6 +176,119 @@ class TestBuildImage:
         with patch("shutil.which", return_value="/usr/bin/docker"):
             result = build_image(dockerfile_path, cache_dir=cache_dir)
             assert result == cached_image
+
+
+@pytest.mark.parametrize("use_environment", [False, True])
+def test_forced_build_refreshes_parent_images_and_docker_layers(
+    tmp_path, monkeypatch, use_environment
+):
+    import hashlib
+
+    monkeypatch.delenv("QUICKSAND_REBUILD_IMAGES", raising=False)
+    if use_environment:
+        monkeypatch.setenv("QUICKSAND_REBUILD_IMAGES", "1")
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM alpine:3.23\n")
+    agent_source = tmp_path / "agent-source"
+    agent_source.mkdir()
+    output = tmp_path / "image.qcow2"
+    output.write_bytes(b"cached")
+    content_hash = hashlib.sha256(dockerfile.read_bytes() + b"agent").hexdigest()[:16]
+    output.with_name("image.qcow2.buildhash").write_text(content_hash)
+
+    with (
+        patch("quicksand_image_tools.build.AGENT_SOURCE_DIR", agent_source),
+        patch("quicksand_image_tools.build._agent_source_hash", return_value="agent"),
+        patch("quicksand_image_tools.build.shutil.which", return_value="/usr/bin/docker"),
+        patch("quicksand_image_tools.build.subprocess.Popen") as popen,
+        patch("quicksand_image_tools.build._create_and_export_container"),
+        patch("quicksand_image_tools.build._remove_docker_image"),
+        patch(
+            "quicksand_image_tools.build._tar_to_qcow2",
+            side_effect=lambda tar, path, **kwargs: path.write_bytes(b"rebuilt"),
+        ),
+    ):
+        popen.return_value.stdout = ["building\n"]
+        popen.return_value.wait.return_value = 0
+        build_image(dockerfile, output_path=output, force=not use_environment)
+
+    assert output.read_bytes() == b"rebuilt"
+    command = popen.call_args.args[0]
+    assert "--pull" in command
+    assert "--no-cache" in command
+
+
+@pytest.mark.parametrize(
+    "package",
+    ["quicksand-agent", "quicksand-cua", "quicksand-ubuntu-desktop", "quicksand-alpine-desktop"],
+)
+@pytest.mark.parametrize("force", [False, True])
+def test_overlay_build_respects_release_rebuild_request(tmp_path, monkeypatch, package, force):
+    monkeypatch.delenv("QUICKSAND_REBUILD_IMAGES", raising=False)
+    if force:
+        monkeypatch.setenv("QUICKSAND_REBUILD_IMAGES", "1")
+    hook_path = Path(__file__).parents[2] / "packages" / "contrib" / package / "hatch_build.py"
+    hook_class = runpy.run_path(str(hook_path))["OverlayImageBuildHook"]
+    save_dir = tmp_path / package.replace("-", "_") / "images"
+    overlays_dir = save_dir / "overlays"
+    overlays_dir.mkdir(parents=True)
+    (save_dir / "manifest.json").write_text("{}")
+    (overlays_dir / "cached.qcow2").touch()
+    hook = hook_class(
+        root=str(tmp_path),
+        config={},
+        build_config=MagicMock(),
+        metadata=MagicMock(),
+        directory=str(tmp_path),
+        target_name="wheel",
+        app=MagicMock(),
+    )
+
+    with (
+        patch("quicksand_image_tools.build_utils.set_platform_wheel_tag", return_value=True),
+        patch.object(hook, "_build_and_save", new_callable=AsyncMock) as build,
+    ):
+        hook.initialize("standard", {})
+
+    if force:
+        build.assert_awaited_once_with(save_dir)
+    else:
+        build.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="The installer executes inside a Unix guest")
+async def test_desktop_repository_setup_stops_on_key_download_failure(tmp_path, monkeypatch):
+    hook_path = (
+        Path(__file__).parents[2] / "packages/contrib/quicksand-ubuntu-desktop/hatch_build.py"
+    )
+    shell = AsyncMock()
+    await runpy.run_path(str(hook_path))["_setup"](shell)
+    command = next(
+        call.args[0]
+        for call in shell.await_args_list
+        if "https://packages.mozilla.org/apt/repo-signing-key.gpg" in call.args[0]
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text("#!/bin/sh\nexit 22\n")
+    curl.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    apt_dir = tmp_path / "apt"
+    (apt_dir / "sources.list.d").mkdir(parents=True)
+    (apt_dir / "preferences.d").mkdir()
+
+    result = subprocess.run(
+        ["/bin/sh", "-c", command.replace("/etc/apt", str(apt_dir))],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 22, result.stderr
+    assert not (apt_dir / "sources.list.d/mozilla.sources").exists()
+    assert not (apt_dir / "preferences.d/mozilla-firefox").exists()
 
 
 @pytest.mark.parametrize(

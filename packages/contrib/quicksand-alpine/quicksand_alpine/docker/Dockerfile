@@ -9,7 +9,7 @@
 FROM rust:alpine AS agent-builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache --upgrade musl-dev 'ca-certificates>=20261020-r0'
 
 # Set up the build directory
 WORKDIR /build
@@ -37,7 +37,7 @@ RUN apk add --no-cache \
     # Networking
     dhcpcd \
     curl \
-    ca-certificates \
+    'ca-certificates>=20261020-r0' \
     # Utilities
     sudo \
     # Disk resize tools (for disk_size config option)

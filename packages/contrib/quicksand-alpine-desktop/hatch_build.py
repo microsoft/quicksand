@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -23,6 +24,13 @@ logger = logging.getLogger("alpine-desktop")
 
 async def _setup(shell: Callable[..., Coroutine[Any, Any, Any]]) -> None:
     """Install Xfce4 desktop environment on Alpine base."""
+    from quicksand_image_tools.browser_trust import install_chromium_ca_distrust
+
+    await shell(
+        "apk add --no-cache --upgrade 'ca-certificates>=20261020-r0'",
+        timeout=120,
+    )
+    await install_chromium_ca_distrust(shell, "/etc/chromium/policies/managed")
 
     # ── Install X.org + Xfce4 + desktop packages ─────────────────
     await shell(
@@ -227,8 +235,12 @@ class OverlayImageBuildHook(BuildHookInterface):
         save_dir = pkg_dir / "images"
         overlays_dir = save_dir / "overlays"
 
-        if not (save_dir / "manifest.json").exists() or not any(overlays_dir.glob("*.qcow2")):
-            self.app.display_info("Save not found, building overlay...")
+        if (
+            os.environ.get("QUICKSAND_REBUILD_IMAGES", "").strip() == "1"
+            or not (save_dir / "manifest.json").exists()
+            or not any(overlays_dir.glob("*.qcow2"))
+        ):
+            self.app.display_info("Building overlay...")
             asyncio.run(self._build_and_save(save_dir))
 
         self.app.display_info(f"Including save: {save_dir}")

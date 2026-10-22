@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -25,12 +26,27 @@ async def _setup(shell: Callable[..., Coroutine[Any, Any, Any]]) -> None:
     """Install steps for the agent sandbox."""
     from quicksand_image_tools.build_utils import run_python_install
 
+    await shell("apt-get update", timeout=120)
+    await shell("apt-get install -y --no-install-recommends ca-certificates", timeout=120)
+    await shell(
+        "dpkg --compare-versions \"$(dpkg-query -W -f='${Version}' ca-certificates)\""
+        " ge 20260816ubuntu0.24.04.1"
+    )
+
     # ── Install uv ──────────────────────────────────────────────
-    await shell("curl -LsSf https://astral.sh/uv/install.sh | sh", timeout=60)
+    await shell(
+        "curl -LsSf https://astral.sh/uv/0.13.4/install.sh -o /tmp/uv-install.sh"
+        " && sh /tmp/uv-install.sh && rm /tmp/uv-install.sh",
+        timeout=60,
+    )
 
     # ── Create Python 3.12 venv with pip at /opt/python ────────
     await run_python_install(
-        shell, "/root/.local/bin/uv venv /opt/python --python 3.12 --seed", timeout=120
+        shell,
+        "/root/.local/bin/uv venv /opt/python --python 3.12 --seed"
+        " && /root/.local/bin/uv pip install --python /opt/python/bin/python"
+        " 'pip>=26.2.2' 'certifi>=2026.10.19'",
+        timeout=120,
     )
 
     # ── Make venv discoverable on PATH ────────────────────────
@@ -64,13 +80,12 @@ PROF
     await shell("/opt/python/bin/pip --version")
 
     # ── Install build-essential ─────────────────────────────────
-    await shell("apt-get update", timeout=120)
     await shell("apt-get install -y build-essential", timeout=600)
 
     # ── Install Python packages ─────────────────────────────────
     await run_python_install(
         shell,
-        "/opt/python/bin/pip install requests 'pyyaml>=6.0'"
+        "/opt/python/bin/pip install 'certifi>=2026.10.19' requests 'pyyaml>=6.0'"
         " 'ddgs>=9.11.2' 'markitdown[all]>=0.1.5'",
         timeout=600,
     )
@@ -101,8 +116,12 @@ class OverlayImageBuildHook(BuildHookInterface):
         save_dir = pkg_dir / "images"
         overlays_dir = save_dir / "overlays"
 
-        if not (save_dir / "manifest.json").exists() or not any(overlays_dir.glob("*.qcow2")):
-            self.app.display_info("Save not found, building overlay...")
+        if (
+            os.environ.get("QUICKSAND_REBUILD_IMAGES", "").strip() == "1"
+            or not (save_dir / "manifest.json").exists()
+            or not any(overlays_dir.glob("*.qcow2"))
+        ):
+            self.app.display_info("Building overlay...")
             asyncio.run(self._build_and_save(save_dir))
 
         self.app.display_info(f"Including save: {save_dir}")

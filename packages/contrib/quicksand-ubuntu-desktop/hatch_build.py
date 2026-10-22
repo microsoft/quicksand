@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -23,9 +24,18 @@ logger = logging.getLogger("ubuntu-desktop")
 
 async def _setup(shell: Callable[..., Coroutine[Any, Any, Any]]) -> None:
     """Install Xfce4 desktop environment on Ubuntu base."""
+    from quicksand_image_tools.browser_trust import install_firefox_ca_distrust
 
     # ── Install Xfce4 desktop packages ───────────────────────────
-    await shell("DEBIAN_FRONTEND=noninteractive apt-get update", timeout=120)
+    await shell("DEBIAN_FRONTEND=noninteractive apt-get update --error-on=any", timeout=120)
+    await shell(
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates",
+        timeout=120,
+    )
+    await shell(
+        "dpkg --compare-versions \"$(dpkg-query -W -f='${Version}' ca-certificates)\""
+        " ge 20260816ubuntu0.24.04.1"
+    )
     await shell(
         "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
         "xserver-xorg-core xserver-xorg-video-modesetting xserver-xorg-input-libinput",
@@ -43,27 +53,34 @@ async def _setup(shell: Callable[..., Coroutine[Any, Any, Any]]) -> None:
         timeout=300,
     )
 
-    # ── Install Firefox ESR from Mozilla PPA ─────────────────────
+    # ── Install Firefox ESR from Mozilla's signed APT repository ─
     await shell(
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
-        "software-properties-common",
+        """set -eu
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg \
+    -o /etc/apt/keyrings/packages.mozilla.org.asc
+chmod 0644 /etc/apt/keyrings/packages.mozilla.org.asc
+cat > /etc/apt/sources.list.d/mozilla.sources << 'EOF'
+Types: deb
+URIs: https://packages.mozilla.org/apt
+Suites: mozilla
+Components: main
+Signed-By: /etc/apt/keyrings/packages.mozilla.org.asc 35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
+EOF
+cat > /etc/apt/preferences.d/mozilla-firefox << 'EOF'
+Package: firefox*
+Pin: origin packages.mozilla.org
+Pin-Priority: 1000
+EOF
+""",
         timeout=120,
     )
-    await shell(
-        "add-apt-repository -y ppa:mozillateam/ppa && "
-        "printf 'Package: firefox*\\nPin: release o=LP-PPA-mozillateam\\n"
-        "Pin-Priority: 1001\\n' > /etc/apt/preferences.d/mozilla-firefox",
-        timeout=120,
-    )
-    await shell("apt-get update", timeout=120)
+    await shell("apt-get update --error-on=any", timeout=120)
     await shell(
         "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends firefox-esr",
         timeout=300,
     )
-    await shell(
-        "apt-get remove --purge -y software-properties-common && apt-get autoremove --purge -y",
-        timeout=120,
-    )
+    await install_firefox_ca_distrust(shell, "/usr/lib/firefox-esr")
 
     # ── LightDM auto-login ───────────────────────────────────────
     await shell(
@@ -134,8 +151,12 @@ class OverlayImageBuildHook(BuildHookInterface):
         save_dir = pkg_dir / "images"
         overlays_dir = save_dir / "overlays"
 
-        if not (save_dir / "manifest.json").exists() or not any(overlays_dir.glob("*.qcow2")):
-            self.app.display_info("Save not found, building overlay...")
+        if (
+            os.environ.get("QUICKSAND_REBUILD_IMAGES", "").strip() == "1"
+            or not (save_dir / "manifest.json").exists()
+            or not any(overlays_dir.glob("*.qcow2"))
+        ):
+            self.app.display_info("Building overlay...")
             asyncio.run(self._build_and_save(save_dir))
 
         self.app.display_info(f"Including save: {save_dir}")

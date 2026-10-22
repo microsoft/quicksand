@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -24,6 +25,36 @@ logger = logging.getLogger("quicksand-cua")
 Shell = Callable[..., Coroutine[Any, Any, Any]]
 
 
+async def _install_playwright_node(shell: Shell) -> None:
+    """Install a patched external runtime for Playwright's Node-based driver."""
+    await shell(
+        """set -eu
+case "$(uname -m)" in
+    x86_64)
+        arch=x64
+        checksum=6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6
+        ;;
+    aarch64)
+        arch=arm64
+        checksum=dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e
+        ;;
+    *)
+        echo "Unsupported architecture for Playwright's Node runtime" >&2
+        exit 1
+        ;;
+esac
+archive="node-v24.22.1-linux-${arch}"
+curl -LsSf "https://nodejs.org/dist/v24.22.1/${archive}.tar.xz" -o /tmp/playwright-node.tar.xz
+printf '%s  %s\\n' "$checksum" /tmp/playwright-node.tar.xz | sha256sum --check -
+mkdir -p /opt/playwright-node
+tar -xJf /tmp/playwright-node.tar.xz -C /opt/playwright-node --strip-components=1 --no-same-owner \
+    "${archive}/bin/node" "${archive}/LICENSE"
+rm /tmp/playwright-node.tar.xz
+""",
+        timeout=180,
+    )
+
+
 # =============================================================================
 #  EDIT HERE — Install steps for your overlay image
 #
@@ -37,25 +68,65 @@ Shell = Callable[..., Coroutine[Any, Any, Any]]
 
 
 async def _setup(shell: Shell) -> None:
+    from quicksand_image_tools.browser_trust import install_chromium_ca_distrust
     from quicksand_image_tools.build_utils import run_python_install
+
+    await shell(
+        """/opt/python/bin/python3 - <<'PY'
+from importlib.metadata import version
+from subprocess import check_output
+from pip._vendor.packaging.version import Version
+
+versions = {
+    "pip": version("pip"),
+    "certifi": version("certifi"),
+    "uv": check_output(["/root/.local/bin/uv", "--version"], text=True).split()[1],
+}
+for package, minimum in (("pip", "26.2.2"), ("certifi", "2026.10.19"), ("uv", "0.13.4")):
+    if Version(versions[package]) < Version(minimum):
+        raise SystemExit(
+            f"Rebuild quicksand-agent with {package}>={minimum} before building quicksand-cua"
+        )
+PY"""
+    )
 
     # ── Install Xvfb, x11vnc, and Playwright system deps ────────
     await shell("apt-get update", timeout=120)
     await shell(
-        "apt-get install -y xvfb x11vnc xauth fonts-liberation fonts-noto-color-emoji",
+        "apt-get install -y ca-certificates xz-utils"
+        " xvfb x11vnc xauth fonts-liberation fonts-noto-color-emoji",
         timeout=300,
+    )
+    await shell(
+        "dpkg --compare-versions \"$(dpkg-query -W -f='${Version}' ca-certificates)\""
+        " ge 20260816ubuntu0.24.04.1"
     )
     await shell(
         "apt-get install -y novnc websockify socat rsync findutils file",
         timeout=300,
     )
 
+    await _install_playwright_node(shell)
+    await install_chromium_ca_distrust(shell, "/etc/opt/chrome_for_testing/policies/managed")
+
     # ── Install Playwright and Chromium via Playwright ───────────
     await run_python_install(
-        shell, '/opt/python/bin/pip install playwright "flake8==7.1.1"', timeout=300
+        shell,
+        "/opt/python/bin/pip install 'certifi>=2026.10.19' playwright 'flake8==7.1.1'",
+        timeout=300,
+    )
+    # Use Playwright's supported external runtime rather than its older bundled Node.
+    await shell(
+        """/opt/python/bin/python3 - <<'PY'
+from pathlib import Path
+import playwright
+
+(Path(playwright.__file__).parent / "driver" / "node").unlink()
+PY"""
     )
     await shell(
         "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright"
+        " PLAYWRIGHT_NODEJS_PATH=/opt/playwright-node/bin/node"
         " /opt/python/bin/python3 -m playwright install --with-deps chromium",
         timeout=300,
     )
@@ -64,9 +135,18 @@ async def _setup(shell: Shell) -> None:
     await shell(
         """cat > /etc/profile.d/playwright.sh << 'PROF'
 export PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+export PLAYWRIGHT_NODEJS_PATH=/opt/playwright-node/bin/node
 export DISPLAY=:0
 PROF
 """,
+    )
+    await shell(
+        """mkdir -p /etc/systemd/system/quicksand-guest-agent.service.d
+cat > /etc/systemd/system/quicksand-guest-agent.service.d/playwright.conf << 'EOF'
+[Service]
+Environment=PLAYWRIGHT_NODEJS_PATH=/opt/playwright-node/bin/node
+EOF
+"""
     )
 
     # ── Systemd service: Xvfb on display :0 ─────────────────────
@@ -194,8 +274,12 @@ class OverlayImageBuildHook(BuildHookInterface):
         save_dir = pkg_dir / "images"
         overlays_dir = save_dir / "overlays"
 
-        if not (save_dir / "manifest.json").exists() or not any(overlays_dir.glob("*.qcow2")):
-            self.app.display_info("Save not found, building overlay...")
+        if (
+            os.environ.get("QUICKSAND_REBUILD_IMAGES", "").strip() == "1"
+            or not (save_dir / "manifest.json").exists()
+            or not any(overlays_dir.glob("*.qcow2"))
+        ):
+            self.app.display_info("Building overlay...")
             asyncio.run(self._build_and_save(save_dir))
 
         self.app.display_info(f"Including save: {save_dir}")

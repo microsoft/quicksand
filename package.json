@@ -7,12 +7,14 @@
   },
   "overrides": {
     "mermaid": {
-      "uuid": "^14.0.0"
+      "uuid": "^14.0.0",
+      "katex": "^0.18.10"
     },
-    "esbuild": "~0.25.0"
+    "esbuild": "~0.25.0",
+    "vite": "^6.4.4"
   },
   "devDependencies": {
-    "mermaid": "^11.16.1",
+    "mermaid": "^11.17.2",
     "vitepress": "^1.6.3",
     "vitepress-plugin-mermaid": "^2.0.10"
   }

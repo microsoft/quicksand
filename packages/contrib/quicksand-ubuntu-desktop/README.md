@@ -48,11 +48,13 @@ async with UbuntuDesktopSandbox(memory="4G", cpus=4) as sb:
 ## What's Included
 
 - Ubuntu 24.04 with Xfce4 desktop + LightDM (auto-login, no password prompt)
-- Firefox ESR browser
+- Firefox ESR browser from Mozilla's signed APT repository
 - Full apt/deb ecosystem
 - Python 3, bash, curl, ca-certificates
 - The quicksand guest agent (pre-installed)
 - Software rendering via Mesa (`LIBGL_ALWAYS_SOFTWARE=1`)
+
+Firefox distrusts the compromised eMudhra intermediate certificates, including their cross-signed variants, at profile startup without waiting for online revocation updates.
 
 ## Default Config
 

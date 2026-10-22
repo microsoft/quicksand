@@ -12,7 +12,7 @@
 # Use rust:alpine for musl (Alpine) or rust:bookworm for glibc (Ubuntu/Debian)
 FROM rust:alpine AS agent-builder
 
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache --upgrade musl-dev 'ca-certificates>=20261020-r0'
 
 WORKDIR /build
 COPY agent/Cargo.toml agent/Cargo.lock* ./
