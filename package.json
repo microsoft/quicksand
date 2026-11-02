@@ -11,7 +11,7 @@
       "katex": "^0.18.10"
     },
     "esbuild": "~0.25.0",
-    "vite": "^6.4.4"
+    "vite": "^6.4.5"
   },
   "devDependencies": {
     "mermaid": "^11.17.2",
