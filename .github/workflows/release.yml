@@ -22,7 +22,7 @@ jobs:
   # Validate
   # --------------------------------------------------------------------------
   validate:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - id: setup-uv
@@ -51,7 +51,7 @@ jobs:
   # --------------------------------------------------------------------------
   check:
     needs: [validate]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: true
       matrix:
@@ -79,7 +79,7 @@ jobs:
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'build') }}
     timeout-minutes: 60
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         runner: ${{ fromJSON(inputs.plan).build_matrix }}
     steps:
@@ -87,6 +87,20 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
+    - name: Check hosted image build prerequisites
+      if: contains(matrix.runner, 'ubuntu-24.04')
+      run: |
+        docker info > /dev/null
+        test -c /dev/kvm
+        # VM lifecycle events can cause udev to remove one-off device ACLs.
+        printf 'SUBSYSTEM=="misc", KERNEL=="kvm", OWNER="%s", MODE="0600"\n' "$(id -u)" \
+          | sudo tee /etc/udev/rules.d/99-quicksand-kvm.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --action=change --sysname-match=kvm
+        sudo udevadm settle
+        test -r /dev/kvm
+        test -w /dev/kvm
+        df -h "$GITHUB_WORKSPACE"
     - id: setup-uv
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
@@ -121,7 +135,7 @@ jobs:
   verify-licenses:
     needs: [validate, build]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'verify-licenses')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0

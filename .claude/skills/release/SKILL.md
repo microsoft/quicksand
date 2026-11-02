@@ -12,20 +12,28 @@ For first-time setup, scaffold the workflow with `uvr workflow init` (see `refer
 
 If the project has existing CI checks (tests, linting, etc.) that aren't yet wired into the release workflow, see `references/custom-jobs.md` before your first release.
 
-## 0. Self-hosted runners
+## 0. Runners
 
-Before dispatching, ensure all runners are up:
+Checks and x64 builds use GitHub-hosted `ubuntu-24.04`. ARM64 image builds use
+the local macOS runner with labels `self-hosted, macos, arm64`; GitHub-hosted
+ARM64 Macs do not support the nested virtualization these builds require.
+The release workflow verifies Docker and KVM access on hosted Ubuntu and reports
+available disk space before building.
 
-```bash
-uv run quicksand-runners start
-```
-
-This starts the local macOS runner and the cloud runners (x64, arm64, win). The command is idempotent — safe to run if runners are already up.
+Before dispatching, confirm the local runner is online and has sufficient free
+disk space. `quicksand-runners start` manages Azure VMs only; it does not start
+the local runner. Do not restore retired Azure VMs for an image-only release.
+QEMU releases still have separate Windows x64 and Linux ARM64 runner mappings
+that must be checked before dispatching.
 
 **Troubleshooting:**
-- **"A session for this runner already exists"**: Another runner process is already running. Kill it first: `pkill -f Runner.Listener` then retry.
-- **"file already exists" error in Set up job**: Stale `_diag/` files from a previous run. Clean with `rm -rf gha-runners/local/_diag`.
-- **NEVER start multiple runner processes.** Each `run.sh` invocation creates a persistent process. Check with `ps aux | grep Runner.Listener` before starting a new one.
+- **Deleted registration**: Re-register the local runner using an account with
+  repository runner-management permission. GitHub's `workflow` OAuth scope
+  alone does not grant that permission.
+- **"A session for this runner already exists"**: Inspect the existing process
+  and reuse it, or stop its specific PID before starting another listener.
+- **NEVER start multiple runner processes.** Check `pgrep -x Runner.Listener`
+  before starting the runner from `gha-runners/local`.
 
 ## 1. Branch
 
