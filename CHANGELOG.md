@@ -4,6 +4,31 @@ All notable changes to the quicksand project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [quicksand-core v0.14.1, quick-sandbox v0.13.1, quicksand-image-tools v0.6.2] - 2026-11-02
+
+Security hardening for the eMudhra/emSign intermediate-CA incident.
+
+### Security
+- **quicksand-core / quick-sandbox:** Require patched certificate stores and raise dependency minimums so new installations select the hardened image and tooling packages.
+- **quicksand-ubuntu v0.10.2 / quicksand-alpine v0.10.2:** Refresh OS CA stores before network bootstrapping and require incident-patched CA packages.
+- **quicksand-agent v0.4.12:** Bootstrap patched uv, pip, and certifi with failure-propagating download and installation steps.
+- **quicksand-cua v0.3.14:** Replace Playwright's older bundled Node with checksum-verified Node 24.22.1, persist its selection across reboots, reject stale parent tooling, and install managed Chromium certificate distrust.
+- **quicksand-ubuntu-desktop v0.9.12 / quicksand-alpine-desktop v0.9.12:** Explicitly distrust the known compromised intermediates in Firefox ESR and Chromium, including Firefox's first launch before online revocation updates arrive. Shared certificate data covers all 16 known original and cross-signed variants of the eight compromised keys.
+- **Documentation:** Update vulnerable dependencies and use a patched Node runtime for builds.
+
+### Fixed
+- **quicksand-ubuntu-desktop:** Install Firefox ESR from Mozilla's signed APT repository with a pinned signing-key fingerprint. Repository updates now fail on download errors rather than continuing with stale package metadata.
+- **quicksand-image-tools / image packages / scaffolds:** Honor forced security rebuilds instead of reusing cached images; forced Docker builds also refresh parent images and bypass cached layers.
+
+### Changed
+- **Release pipeline:** Build x64 images and run checks on GitHub-hosted Ubuntu. ARM64 images continue to use the local macOS runner. Release builds use patched tooling and always request fresh images.
+- **quicksand-base-scaffold v0.3.13 / quicksand-overlay-scaffold v0.3.13:** Raise build and runtime dependency minimums to the hardened packages.
+
+Existing guests and saved overlays are not patched by upgrading host packages.
+Recreate them from the new images; do not rebase old overlays onto changed base
+images. Custom workloads that install PHP still need their own vendor-fixed PHP
+packages.
+
 ## [quicksand-core v0.14.0, quick-sandbox v0.13.0] - 2026-10-14
 
 Bidirectional port forwarding. Guests can now reach services on the host, and the forwarding API describes both directions with one type.

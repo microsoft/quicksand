@@ -22,7 +22,7 @@ jobs:
   # Validate
   # --------------------------------------------------------------------------
   validate:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - id: setup-uv
@@ -51,7 +51,7 @@ jobs:
   # --------------------------------------------------------------------------
   check:
     needs: [validate]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: true
       matrix:
@@ -87,6 +87,14 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
+    - name: Check hosted image build prerequisites
+      if: contains(matrix.runner, 'ubuntu-24.04')
+      run: |
+        docker info > /dev/null
+        test -c /dev/kvm
+        sudo setfacl -m "u:$(id -u):rw" /dev/kvm
+        test -r /dev/kvm && test -w /dev/kvm
+        df -h "$GITHUB_WORKSPACE"
     - id: setup-uv
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
@@ -121,7 +129,7 @@ jobs:
   verify-licenses:
     needs: [validate, build]
     if: always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'verify-licenses')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0

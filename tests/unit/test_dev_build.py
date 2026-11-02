@@ -256,6 +256,38 @@ def test_overlay_build_respects_release_rebuild_request(tmp_path, monkeypatch, p
         build.assert_not_awaited()
 
 
+@pytest.mark.parametrize(
+    ("runner", "retag_expected", "pure_expected"),
+    [
+        (["ubuntu-24.04"], True, True),
+        (["self-hosted", "macos", "arm64"], True, False),
+        (["windows-11-arm"], False, False),
+    ],
+)
+def test_release_wheel_hooks_follow_the_build_runner(
+    monkeypatch, runner, retag_expected, pure_expected
+):
+    import json
+
+    import uvr_hooks
+
+    monkeypatch.setenv("UVR_RUNNER", json.dumps(runner))
+    with (
+        patch.object(uvr_hooks, "_retag_wheels") as retag,
+        patch.object(uvr_hooks, "_build_pure_wheels") as pure,
+    ):
+        uvr_hooks.Hooks().post_build()
+
+    if retag_expected:
+        retag.assert_called_once_with(Path("dist"))
+    else:
+        retag.assert_not_called()
+    if pure_expected:
+        pure.assert_called_once_with(Path("dist"))
+    else:
+        pure.assert_not_called()
+
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.name == "nt", reason="The installer executes inside a Unix guest")
 async def test_desktop_repository_setup_stops_on_key_download_failure(tmp_path, monkeypatch):

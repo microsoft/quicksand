@@ -16,7 +16,7 @@ from uv_release.dependencies.shared.hooks import Hooks as ReleaseHook
 # x64 images are built natively on Linux; arm64 images are built on
 # macOS because the Linux arm64 runners lack KVM for overlay builds.
 RETAG_RUNNERS: list[list[str]] = [
-    ["self-hosted", "linux", "x64"],
+    ["ubuntu-24.04"],
     ["self-hosted", "macos", "arm64"],
 ]
 
@@ -83,7 +83,7 @@ def _retag_wheels(dist: Path) -> None:
 
 # Runner used to build pure (py3-none-any) wheels for PyPI.
 # Only one runner needs to do this since the output is platform-independent.
-_PURE_WHEEL_RUNNER: list[str] = ["self-hosted", "linux", "x64"]
+_PURE_WHEEL_RUNNER: list[str] = ["ubuntu-24.04"]
 
 # PyPI per-file size limit.
 _PYPI_MAX_SIZE = 100 * 1024 * 1024  # 100 MB
@@ -187,7 +187,7 @@ _TEST_PACKAGES = {
 
 
 class Hooks(ReleaseHook):
-    def post_plan(self, workspace, intent, plan: Plan) -> Plan:
+    def post_plan(self, root: Path, command: str, plan: Plan) -> Plan:
         """Customize the release plan."""
         changed = {r.name for r in plan.releases}
         if "test" not in plan.skip and not (changed & _TEST_PACKAGES):

@@ -948,7 +948,7 @@ wheels = [
 
 [[package]]
 name = "quick-sandbox"
-version = "0.13.1.dev0"
+version = "0.13.1"
 source = { editable = "packages/quicksand" }
 dependencies = [
     { name = "packaging" },
@@ -1020,7 +1020,7 @@ provides-extras = ["qemu", "ubuntu", "alpine", "alpine-desktop", "ubuntu-desktop
 
 [[package]]
 name = "quicksand-agent"
-version = "0.4.12.dev0"
+version = "0.4.12"
 source = { editable = "packages/contrib/quicksand-agent" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1035,7 +1035,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-alpine"
-version = "0.10.2.dev0"
+version = "0.10.2"
 source = { editable = "packages/contrib/quicksand-alpine" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1054,7 +1054,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-alpine-desktop"
-version = "0.9.12.dev0"
+version = "0.9.12"
 source = { editable = "packages/contrib/quicksand-alpine-desktop" }
 dependencies = [
     { name = "quicksand-alpine" },
@@ -1072,7 +1072,7 @@ dev = []
 
 [[package]]
 name = "quicksand-base-scaffold"
-version = "0.3.13.dev0"
+version = "0.3.13"
 source = { editable = "packages/dev/quicksand-base-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1092,7 +1092,7 @@ source = { editable = "packages/dev/quicksand-build-tools" }
 
 [[package]]
 name = "quicksand-core"
-version = "0.14.1.dev0"
+version = "0.14.1"
 source = { editable = "packages/quicksand-core" }
 dependencies = [
     { name = "certifi" },
@@ -1113,7 +1113,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-cua"
-version = "0.3.14.dev0"
+version = "0.3.14"
 source = { editable = "packages/contrib/quicksand-cua" }
 dependencies = [
     { name = "quicksand-agent" },
@@ -1147,7 +1147,7 @@ requires-dist = [
 
 [[package]]
 name = "quicksand-image-tools"
-version = "0.6.2.dev0"
+version = "0.6.2"
 source = { editable = "packages/dev/quicksand-image-tools" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1158,7 +1158,7 @@ requires-dist = [{ name = "quicksand-core", editable = "packages/quicksand-core"
 
 [[package]]
 name = "quicksand-overlay-scaffold"
-version = "0.3.13.dev0"
+version = "0.3.13"
 source = { editable = "packages/dev/quicksand-overlay-scaffold" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1185,7 +1185,7 @@ source = { editable = "packages/quicksand-smb" }
 
 [[package]]
 name = "quicksand-ubuntu"
-version = "0.10.2.dev0"
+version = "0.10.2"
 source = { editable = "packages/contrib/quicksand-ubuntu" }
 dependencies = [
     { name = "quicksand-core" },
@@ -1204,7 +1204,7 @@ dev = [{ name = "quicksand-image-tools", editable = "packages/dev/quicksand-imag
 
 [[package]]
 name = "quicksand-ubuntu-desktop"
-version = "0.9.12.dev0"
+version = "0.9.12"
 source = { editable = "packages/contrib/quicksand-ubuntu-desktop" }
 dependencies = [
     { name = "quicksand-core" },
