@@ -79,7 +79,7 @@ jobs:
     if: ${{ always() && !failure() && !cancelled() && !contains(fromJSON(inputs.plan).skip, 'build') }}
     timeout-minutes: 60
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         runner: ${{ fromJSON(inputs.plan).build_matrix }}
     steps:
@@ -93,7 +93,8 @@ jobs:
         docker info > /dev/null
         test -c /dev/kvm
         sudo setfacl -m "u:$(id -u):rw" /dev/kvm
-        test -r /dev/kvm && test -w /dev/kvm
+        test -r /dev/kvm
+        test -w /dev/kvm
         df -h "$GITHUB_WORKSPACE"
     - id: setup-uv
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
