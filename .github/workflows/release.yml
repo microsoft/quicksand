@@ -92,7 +92,12 @@ jobs:
       run: |
         docker info > /dev/null
         test -c /dev/kvm
-        sudo setfacl -m "u:$(id -u):rw" /dev/kvm
+        # VM lifecycle events can cause udev to remove one-off device ACLs.
+        printf 'SUBSYSTEM=="misc", KERNEL=="kvm", OWNER="%s", MODE="0600"\n' "$(id -u)" \
+          | sudo tee /etc/udev/rules.d/99-quicksand-kvm.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --action=change --sysname-match=kvm
+        sudo udevadm settle
         test -r /dev/kvm
         test -w /dev/kvm
         df -h "$GITHUB_WORKSPACE"
