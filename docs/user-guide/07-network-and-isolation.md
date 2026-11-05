@@ -103,16 +103,16 @@ port_forwards=[
 
 Each guest connection becomes its own connection on the host, so concurrent requests and keep-alive sessions behave normally. When the guest is the source its address must be inside `10.0.2.0/24` and may not be the gateway (`10.0.2.2`), the DNS forwarder (`10.0.2.3`), the guest itself (`10.0.2.15`), or the mount tunnel (`10.0.2.100:445`). Guest-to-host forwards need a network device, so they are rejected with `NetworkMode.NONE`.
 
-## Security boundary
+## Securing boundaries
 
-The VM provides strong isolation:
+Quicksand aims to help create VMs easily that may offer better isolation than running code directly by using:
 
-- **Separate kernel.** The guest runs its own Linux kernel. A crash or exploit inside the VM doesn't affect the host.
-- **No shared filesystem** by default. The guest can only see files you explicitly mount.
-- **No network** by default. The guest can't reach the internet or the host network unless you opt in.
-- **No root on host.** The entire VM runs as a normal user process. No Docker daemon, no admin privileges.
+- **Own guest kernel.** The guest runs its own Linux kernel. A crash or exploit inside the VM might not affect the host (🤞 fingers crossed, see below).
+- **Opt-in mounts.** With the intention of only allowing guests to see explicitly mounted files, by default, no host folders are mounted into the guest.
+- **No internet** by default. Ideally, the guest should not be able to reach the internet or host network unless it is enabled.
+- **Unprivileged host process.** The VM is started as a normal user process, with no Docker daemon and no admin privileges needed to run it.
 
-The agent can execute arbitrary code inside the VM, including installing packages, modifying system files, and running as root, all without any risk to the host. The point is to give the agent a computer it can't break out of.
+The agent can execute arbitrary code inside the VM, including installing packages, modifying system files, and running as root.
 
 ## Common patterns
 
@@ -123,7 +123,7 @@ async with Sandbox(image="ubuntu", network_mode=NetworkMode.FULL, save="with-dep
     await sb.execute("apt update && apt install -y python3 python3-pip")
     await sb.execute("pip install -r requirements.txt")
 
-# Phase 2: offline (more secure — MOUNTS_ONLY by default)
+# Phase 2: offline (MOUNTS_ONLY by default)
 async with Sandbox(image="with-deps") as sb:
     handle = await sb.mount("/host/code", "/mnt/code")
     await sb.execute("cd /mnt/code && python3 main.py")
@@ -150,3 +150,4 @@ async with Sandbox(
     await sb.execute("cd /app && node server.js &")
     # Test from host: requests.get("http://localhost:3000")
 ```
+- 🤞 Isolation cannot be guaranteed, bugs may exist as [Trail of Bits: "VMs won't contain cyber-capable agents"](https://blog.trailofbits.com/2026/08/26/vms-wont-contain-cyber-capable-agents/) shows.
