@@ -104,6 +104,13 @@ class RuntimeBuildHook(BuildHookInterface):
                 Path("/usr/share/qemu/linuxboot_dma.bin"),
                 Path("/usr/lib/ipxe/qemu/linuxboot_dma.bin"),  # Ubuntu ipxe-qemu
             ],
+            # Option ROM of virtio-vga, the display device of the desktop images
+            "vgabios-virtio.bin": [
+                Path("/usr/share/seabios/vgabios-virtio.bin"),  # Ubuntu seabios
+                qemu_share_dir_windows / "vgabios-virtio.bin",  # Windows (Stefan Weil)
+                qemu_share_dir_linux / "vgabios-virtio.bin",  # macOS/Linux
+                Path("/usr/share/qemu/vgabios-virtio.bin"),
+            ],
         }
 
         for filename, search_paths in required_files.items():
@@ -802,7 +809,14 @@ class RuntimeBuildHook(BuildHookInterface):
         path.write_text("\n".join(lines))
 
     def _bundle_qemu_modules(self, bin_dir: Path, qemu_binary: str) -> None:
-        """Bundle QEMU accelerator modules (Linux only)."""
+        """Bundle QEMU accelerator and virtio display modules (Linux only).
+
+        Debian and Ubuntu build the virtio GPU devices as modules, so
+        ``virtio-vga`` (x86_64) and ``virtio-gpu-pci`` (ARM64), which the
+        desktop images use, only exist if these modules are bundled. The
+        ``-gl`` variants are left out: they need virglrenderer and OpenGL
+        libraries that are not bundled.
+        """
         if platform.system() != "Linux":
             return
 
@@ -843,6 +857,17 @@ class RuntimeBuildHook(BuildHookInterface):
             self.app.display_warning(
                 f"No accelerator modules found in {source_dir}. TCG may be built-in on this system."
             )
+
+        display_modules = [
+            "hw-display-virtio-gpu.so",
+            "hw-display-virtio-gpu-pci.so",
+            "hw-display-virtio-vga.so",
+        ]
+        for name in display_modules:
+            module = source_dir / name
+            if module.exists():
+                shutil.copy2(module, module_dir / name)
+                self.app.display_info(f"Bundled module: {name}")
 
     # -----------------------------------------------------------------
     # QEMU installation
